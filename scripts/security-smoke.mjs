@@ -1,0 +1,16 @@
+const base = process.env.TEST_BASE_URL || "http://127.0.0.1:3000";
+const assert = (condition, message) => { if (!condition) throw new Error(message); console.log(`✓ ${message}`); };
+async function call(path, options = {}, cookie = "") { const response = await fetch(`${base}${path}`, { ...options, headers: { ...(options.headers || {}), ...(cookie ? { Cookie: cookie } : {}) }, redirect: "manual" }); const type = response.headers.get("content-type") || ""; const data = type.includes("json") ? await response.json() : null; return { response, data, cookie: response.headers.get("set-cookie")?.split(";")[0] || cookie }; }
+const post = (body, cookie = "", extra = {}) => call("/api/auth", { method: "POST", headers: { "Content-Type": "application/json", ...(extra.headers || {}) }, body: JSON.stringify(body) }, cookie);
+const anonymous = await call("/api/bootstrap"); assert(anonymous.response.status === 401, "Un visiteur anonyme n'obtient pas de données de santé");
+const bypass = await post({ action: "demo", role: "admin" }); assert(bypass.response.status === 403, "La bascule directe administrateur est interdite");
+const patientLogin = await post({ action: "login", identifier: "aicha.demo@santeplus.bj", password: "Demo1234!" }); assert(patientLogin.response.status === 200 && patientLogin.cookie, "Connexion patient explicite");
+const patient = await call("/api/bootstrap", {}, patientLogin.cookie); assert(patient.data?.user?.role === "patient" && patient.data.records?.length > 0, "Dossier accessible au patient authentifié");
+const doctorLogin = await post({ action: "login", identifier: "medecin.demo@santeplus.bj", password: "Demo1234!" }); assert(doctorLogin.data?.needs2FA && !doctorLogin.cookie, "Le médecin ne reçoit pas de session avant 2FA");
+const verify = await post({ action: "verify2fa", challenge: doctorLogin.data.challenge, code: doctorLogin.data.demoCode }); assert(verify.response.status === 200 && verify.cookie, "Code TOTP médecin validé");
+const allowed = await call(`/api/patient/${patient.data.user.id}`, {}, verify.cookie); assert(allowed.response.status === 200, "Le médecin autorisé consulte le dossier");
+const adminLogin = await post({ action: "login", identifier: "admin.demo@santeplus.bj", password: "Demo1234!" }); const adminVerify = await post({ action: "verify2fa", challenge: adminLogin.data.challenge, code: adminLogin.data.demoCode }); const blocked = await call(`/api/patient/${patient.data.user.id}`, {}, adminVerify.cookie); assert(blocked.response.status === 403, "L'administration ne lit pas le dossier clinique");
+const csrf = await call("/api/actions", { method: "POST", headers: { "Content-Type": "application/json", Origin: "https://evil.example" }, body: JSON.stringify({ action: "markAllNotifications" }) }, patientLogin.cookie); assert(csrf.response.status === 403, "Une origine étrangère est refusée");
+const logout = await post({ action: "logout" }, patientLogin.cookie); assert(logout.response.status === 200, "Déconnexion effectuée");
+const expired = await call("/api/bootstrap", {}, patientLogin.cookie); assert(expired.response.status === 401, "La session révoquée est immédiatement inutilisable");
+console.log("Tests de sécurité de base terminés. Aucun test de conformité ou de charge n'est inclus.");
