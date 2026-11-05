@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Activity, ArrowRight, CalendarDays, Check, ClipboardList, Download, FileText, HeartPulse, Search, ShieldCheck, X, type LucideIcon } from "lucide-react";
 import type { AuditLog, BootstrapData, MedicalDocument, MedicalRecord, Prescription, UserView } from "@/lib/types";
 
-export type ActionResult = { message?: string; credentials?: { email: string; password: string; totpSecret: string }; [key: string]: unknown };
+export type ActionResult = { message?: string; credentials?: { email: string; password: string; role?: string }; [key: string]: unknown };
 export type ScreenProps = {
   data: BootstrapData;
   go: (page: string) => void;
@@ -31,7 +31,7 @@ export const firstName = (name: string) => name.replace(/^Dr\.\s*/i, "").split("
 export const initials = (name: string) => name.replace(/^Dr\.\s*/i, "").split(" ").filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "S+";
 
 export function Avatar({ name, size = 40, tone = 0, className = "" }: { name: string; size?: number; tone?: number; className?: string }) {
-  const palette = ["#e5f4f1|#188e80", "#ecebfb|#7064b8", "#fcece7|#d4785b", "#e7f0fc|#4f83bd", "#fff1db|#bb8736"];
+  const palette = ["#eff6ff|#2563eb", "#ecebfb|#7064b8", "#fcece7|#d4785b", "#e7f0fc|#4f83bd", "#fff1db|#bb8736"];
   const [backgroundColor, color] = palette[Math.abs(tone || name.length) % palette.length].split("|");
   return <span className={`avatar ${className}`} style={{ width: size, height: size, minWidth: size, fontSize: Math.max(11, size * 0.3), backgroundColor, color }}>{initials(name)}</span>;
 }
@@ -77,7 +77,7 @@ export function DateTile({ value }: { value: string | Date }) {
   return <div className="date-tile"><strong>{new Intl.DateTimeFormat("fr-FR", { day: "2-digit" }).format(date)}</strong><span>{new Intl.DateTimeFormat("fr-FR", { month: "short" }).format(date).replace(".", "")}</span></div>;
 }
 
-export function MiniBars({ values, labels, color = "#18aa9b" }: { values: number[]; labels: string[]; color?: string }) {
+export function MiniBars({ values, labels, color = "#2563eb" }: { values: number[]; labels: string[]; color?: string }) {
   const max = Math.max(...values, 1);
   return <div className="mini-bars">{values.map((value, index) => <div className="mini-bar-col" key={index}><span className="mini-bar-value">{value}</span><div className="mini-bar-track"><div style={{ height: `${Math.max(8, value / max * 100)}%`, background: color }} /></div><span className="mini-bar-label">{labels[index]}</span></div>)}</div>;
 }
@@ -93,10 +93,16 @@ export function PatientDetailModal({ patientId, onClose, onConsult, role }: { pa
   const [detail, setDetail] = useState<PatientDetails | null>(null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState("historique");
+  const [prevPatientId, setPrevPatientId] = useState(patientId);
+  if (patientId !== prevPatientId) {
+    setPrevPatientId(patientId);
+    setDetail(null);
+    setLoading(Boolean(patientId));
+    setTab("historique");
+  }
   useEffect(() => {
-    if (!patientId) { setDetail(null); return; }
+    if (!patientId) return;
     const controller = new AbortController();
-    setLoading(true); setTab("historique");
     fetch(`/api/patient/${patientId}`, { signal: controller.signal }).then((response) => response.json()).then((result) => { if (!controller.signal.aborted) setDetail(result.patient ? result : null); }).catch(() => {}).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [patientId]);

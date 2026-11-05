@@ -1,7 +1,10 @@
-import { DashboardApp } from "@/components/dashboard-app";
+import { redirect } from "next/navigation";
+import { getSessionUser } from "@/lib/auth";
+import { PublicLanding } from "@/components/public-landing";
 
 export const dynamic = "force-dynamic";
 
-export default function HomePage() {
-  return <DashboardApp demoEnabled={process.env.ENABLE_DEMO_MODE === "true"} />;
+export default async function HomePage() {
+  if (await getSessionUser()) redirect("/espace");
+  return <PublicLanding />;
 }

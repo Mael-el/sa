@@ -1,35 +1,22 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomInt } from "node:crypto";
 import { hash } from "bcryptjs";
-import { and, eq, isNull, ne } from "drizzle-orm";
+import { and, eq, isNull, ne, or } from "drizzle-orm";
 import { db } from "@/db";
 import { accessRequests, appointments, auditLogs, bloodDonations, bloodStocks, careConsents, doctors, hospitalServices, hospitals, medicalRecords, notifications, payments, platformSettings, prescriptions, privacyRequests, purchaseOrders, sessions, stockItems, users, type Medication } from "@/db/schema";
 import { getSessionUser } from "@/lib/auth";
-import { encryptValue } from "@/lib/crypto";
 import { hasCareConsent, sameOrigin, withinRateLimit } from "@/lib/security";
 import { checkInteractions } from "@/lib/clinical";
+import { issueResetCode } from "@/lib/password-reset";
 
 export const dynamic = "force-dynamic";
 
 const fail = (error: string, status = 400) => Response.json({ error }, { status });
 const asNumber = (value: unknown) => Number(value);
 const asText = (value: unknown) => String(value ?? "").trim();
+const temporaryPassword = () => `${randomBytes(12).toString("base64url")}!A7`;
 
 async function writeAudit(userId: number, action: string, resource: string, details?: string) {
   await db.insert(auditLogs).values({ userId, action, resource, details });
-}
-
-function toBase32(buffer: Buffer) {
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-  let bits = 0;
-  let value = 0;
-  let result = "";
-  for (const byte of buffer) {
-    value = (value << 8) | byte;
-    bits += 8;
-    while (bits >= 5) { result += alphabet[(value >>> (bits - 5)) & 31]; bits -= 5; }
-  }
-  if (bits > 0) result += alphabet[(value << (5 - bits)) & 31];
-  return result;
 }
 
 export async function POST(request: Request) {
@@ -65,6 +52,28 @@ export async function POST(request: Request) {
       return Response.json({ message: "Votre rendez-vous a été confirmé.", appointment });
     }
 
+    if (action === "rescheduleAppointment") {
+      if (role !== "patient") return fail("Action réservée aux patients.", 403);
+      const appointmentId = asNumber(body.id);
+      const scheduledAt = new Date(asText(body.scheduledAt));
+      if (!Number.isInteger(appointmentId) || !Number.isFinite(scheduledAt.getTime()) || scheduledAt.getTime() <= Date.now()) return fail("Choisissez une nouvelle date future valide.");
+      if (scheduledAt.getTime() > Date.now() + 365 * 86400000) return fail("La date ne peut pas dépasser un an.");
+      const [appointment] = await db.select().from(appointments).where(and(eq(appointments.id, appointmentId), eq(appointments.patientId, user.id))).limit(1);
+      if (!appointment) return fail("Rendez-vous introuvable.", 404);
+      if (appointment.status !== "confirmé") return fail("Seul un rendez-vous confirmé peut être déplacé.");
+      const [conflict] = await db.select({ id: appointments.id }).from(appointments)
+        .where(and(eq(appointments.doctorId, appointment.doctorId), eq(appointments.scheduledAt, scheduledAt), ne(appointments.status, "annulé"), ne(appointments.id, appointment.id))).limit(1);
+      if (conflict) return fail("Ce créneau est déjà réservé. Choisissez une autre heure.", 409);
+      await db.update(appointments).set({ scheduledAt }).where(eq(appointments.id, appointment.id));
+      const [doctor] = await db.select().from(doctors).where(eq(doctors.id, appointment.doctorId)).limit(1);
+      await db.insert(notifications).values([
+        { userId: user.id, title: "Rendez-vous déplacé", message: `Votre rendez-vous est désormais fixé au ${scheduledAt.toLocaleString("fr-FR")}.`, category: "rendez-vous" },
+        ...(doctor ? [{ userId: doctor.userId, title: "Rendez-vous déplacé", message: `${user.fullName} a déplacé son rendez-vous au ${scheduledAt.toLocaleString("fr-FR")}.`, category: "rendez-vous" }] : []),
+      ]);
+      await writeAudit(user.id, "Reprogrammation de rendez-vous", `Rendez-vous #${appointment.id}`, scheduledAt.toISOString());
+      return Response.json({ message: "Votre rendez-vous a été déplacé.", scheduledAt: scheduledAt.toISOString() });
+    }
+
     if (action === "cancelAppointment") {
       if (role !== "patient") return fail("Action réservée aux patients.", 403);
       const [appointment] = await db.select().from(appointments).where(and(eq(appointments.id, asNumber(body.id)), eq(appointments.patientId, user.id))).limit(1);
@@ -76,18 +85,24 @@ export async function POST(request: Request) {
     }
 
     if (action === "payBill") {
-      if (role !== "patient") return fail("Action réservée aux patients.", 403);
+      return fail("Le paiement en ligne n'est pas activé. Réglez auprès de l'établissement, qui enregistrera le paiement.", 503);
+    }
+
+    if (action === "recordPayment") {
+      if (!["hospital", "admin"].includes(role)) return fail("Action réservée à l'établissement ou à l'administration.", 403);
+      const paymentId = asNumber(body.id);
       const provider = asText(body.provider);
-      const phone = asText(body.phone);
-      if (!["MTN MoMo", "Moov Money"].includes(provider) || phone.replace(/\D/g, "").length < 8) return fail("Choisissez un opérateur et saisissez un numéro valide.");
-      const [payment] = await db.select().from(payments).where(and(eq(payments.id, asNumber(body.id)), eq(payments.patientId, user.id))).limit(1);
-      if (!payment || payment.status === "payé") return fail("Facture introuvable ou déjà réglée.");
-      if (!user.isDemo) return fail("Le paiement réel Mobile Money n'est pas encore configuré. Aucun débit n'a été effectué.", 503);
-      const reference = `SP-${provider === "MTN MoMo" ? "MTN" : "MOOV"}-${Date.now().toString().slice(-8)}`;
-      await db.update(payments).set({ status: "payé", provider, reference }).where(eq(payments.id, payment.id));
-      await db.insert(notifications).values({ userId: user.id, title: "Paiement enregistré", message: `Votre paiement de ${payment.amount.toLocaleString("fr-FR")} FCFA a été enregistré en mode démonstration. Réf. ${reference}.`, category: "paiement" });
-      await writeAudit(user.id, "Paiement simulé", `Facture #${payment.id}`, `${provider} · ${reference}`);
-      return Response.json({ message: "Paiement de démonstration enregistré. Aucun compte Mobile Money n'a été débité.", reference });
+      const reference = asText(body.reference);
+      if (!Number.isInteger(paymentId) || !provider || reference.length < 3 || reference.length > 80) return fail("Indiquez un moyen de paiement et une référence valide.");
+      const [payment] = await db.select().from(payments).where(eq(payments.id, paymentId)).limit(1);
+      if (!payment || payment.status !== "en attente") return fail("Facture introuvable ou déjà traitée.");
+      if (role === "hospital" && payment.hospitalId !== user.hospitalId) return fail("Accès refusé.", 403);
+      await db.transaction(async (tx) => {
+        await tx.update(payments).set({ status: "payé", provider, reference }).where(and(eq(payments.id, payment.id), eq(payments.status, "en attente")));
+        await tx.insert(notifications).values({ userId: payment.patientId, title: "Paiement enregistré", message: `Votre paiement de ${payment.amount.toLocaleString("fr-FR")} FCFA a été enregistré. Réf. ${reference}.`, category: "paiement" });
+        await tx.insert(auditLogs).values({ userId: user.id, action: "Paiement enregistré", resource: `Facture #${payment.id}`, details: `${provider} · ${reference}` });
+      });
+      return Response.json({ message: "Paiement enregistré." });
     }
 
     if (action === "planDonation") {
@@ -112,9 +127,25 @@ export async function POST(request: Request) {
       const fullName = asText(body.fullName);
       const city = asText(body.city);
       const phone = asText(body.phone);
-      if (fullName.length < 2 || fullName.length > 180 || city.length > 100 || phone.length < 8) return fail("Vérifiez votre nom, votre ville et votre numéro.");
-      await db.update(users).set({ fullName, city, phone }).where(eq(users.id, user.id));
-      await writeAudit(user.id, "Modification de profil", "Compte utilisateur");
+      const email = asText(body.email).toLowerCase() || user.email;
+      // Champ absent = inchangé : les formulaires partiels ne doivent pas effacer de données.
+      const bloodGroup = body.bloodGroup === undefined ? user.bloodGroup : asText(body.bloodGroup) || null;
+      const birthDate = body.birthDate === undefined ? user.birthDate : asText(body.birthDate) || null;
+      if (fullName.length < 2 || fullName.length > 180) return fail("Le nom complet doit contenir entre 2 et 180 caractères.");
+      if (city.length > 100) return fail("La ville ne doit pas dépasser 100 caractères.");
+      if (!/^\+?[0-9 .()-]{8,40}$/.test(phone)) return fail("Le numéro de téléphone est invalide.");
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return fail("L'adresse email est invalide.");
+      if (bloodGroup && !["O+", "O-", "A+", "A-", "B+", "B-", "AB+", "AB-"].includes(bloodGroup)) return fail("Groupe sanguin invalide.");
+      if (birthDate) {
+        const parsed = new Date(`${birthDate}T00:00:00Z`);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate) || Number.isNaN(parsed.getTime()) || parsed.getTime() > Date.now()) return fail("La date de naissance est invalide.");
+        if (parsed.getTime() < Date.now() - 120 * 365.25 * 86400000) return fail("La date de naissance est invalide.");
+      }
+      const [conflict] = await db.select({ id: users.id, email: users.email, phone: users.phone })
+        .from(users).where(and(ne(users.id, user.id), or(eq(users.email, email), eq(users.phone, phone)))).limit(1);
+      if (conflict) return fail(conflict.email === email ? "Cette adresse email est déjà utilisée." : "Ce numéro de téléphone est déjà utilisé.", 409);
+      await db.update(users).set({ fullName, city, phone, email, bloodGroup, birthDate }).where(eq(users.id, user.id));
+      await writeAudit(user.id, "Modification de profil", "Compte utilisateur", email !== user.email ? "Adresse email modifiée" : "Informations personnelles mises à jour");
       return Response.json({ message: "Vos informations ont été mises à jour." });
     }
 
@@ -229,7 +260,7 @@ export async function POST(request: Request) {
       const applicantName = asText(body.applicantName);
       const email = asText(body.email).toLowerCase();
       if (applicantName.length < 3 || !email.includes("@")) return fail("Nom et email valides requis.");
-      await db.insert(accessRequests).values({ applicantName, email, phone: asText(body.phone), role: "doctor", specialty: asText(body.specialty), organization: hospital?.shortName || "" });
+      await db.insert(accessRequests).values({ applicantName, email, phone: asText(body.phone), role: "doctor", specialty: asText(body.specialty), licenseNumber: asText(body.licenseNumber) || null, organization: hospital?.shortName || "" });
       await writeAudit(user.id, "Demande d'accès médecin", applicantName);
       return Response.json({ message: "Demande transmise à l'administration SANTÉ+." });
     }
@@ -253,39 +284,102 @@ export async function POST(request: Request) {
       const [access] = await db.select().from(accessRequests).where(eq(accessRequests.id, asNumber(body.id))).limit(1);
       const decision = asText(body.decision);
       if (!access || access.status !== "en attente" || !["approuvé", "refusé"].includes(decision)) return fail("Demande déjà traitée ou décision invalide.");
-      let credentials: { email: string; password: string; totpSecret: string } | undefined;
+      let credentials: { email: string; password: string; role: string } | undefined;
       if (decision === "approuvé") {
         const [existing] = await db.select().from(users).where(eq(users.email, access.email)).limit(1);
         if (existing) return fail("Un compte utilise déjà cette adresse email.", 409);
-        let hospitalId: number;
-        if (access.role === "hospital") {
-          const [created] = await db.insert(hospitals).values({ name: access.organization || access.applicantName, shortName: (access.organization || access.applicantName).slice(0, 70), city: "Cotonou", address: "Adresse à compléter", phone: access.phone || "À compléter", type: "Établissement de santé", latitude: 6.365, longitude: 2.423, bedsTotal: 0, bedsOccupied: 0 }).returning();
-          hospitalId = created.id;
-        } else {
-          const allHospitals = await db.select().from(hospitals);
-          const matched = allHospitals.find((item) => item.shortName.toLowerCase() === (access.organization || "").toLowerCase() || item.name.toLowerCase().includes((access.organization || "_____").toLowerCase()));
-          if (!matched) return fail("Établissement introuvable. Créez d'abord l'établissement concerné.");
-          hospitalId = matched.id;
-        }
-        const password = `${randomBytes(9).toString("base64url")}!A2`;
-        const secretBytes = randomBytes(20);
-        const [createdUser] = await db.insert(users).values({ fullName: access.applicantName, email: access.email, phone: access.phone, passwordHash: await hash(password, 12), role: access.role, hospitalId, city: "Cotonou", twoFactorSecret: encryptValue(secretBytes.toString("hex")) }).returning();
-        if (access.role === "doctor") await db.insert(doctors).values({ userId: createdUser.id, hospitalId, specialty: access.specialty || "Médecine générale", licenseNumber: `ONMB-${new Date().getFullYear()}-${createdUser.id}`, yearsExperience: 0 });
-        credentials = { email: access.email, password, totpSecret: toBase32(secretBytes) };
+        const allHospitals = await db.select().from(hospitals);
+        const organization = (access.organization || "").toLowerCase();
+        const matched = allHospitals.find((item) => item.shortName.toLowerCase() === organization || item.name.toLowerCase() === organization);
+        if (!matched) return fail("Établissement introuvable. Créez d'abord l'établissement concerné dans Établissements.");
+        if (access.role === "doctor" && !access.licenseNumber) return fail("Numéro d'ordre manquant. Demandez au médecin de compléter sa demande.");
+        const password = temporaryPassword();
+        const passwordHash = await hash(password, 12);
+        await db.transaction(async (tx) => {
+          const [createdUser] = await tx.insert(users).values({ fullName: access.applicantName, email: access.email, phone: access.phone || null, passwordHash, role: access.role, hospitalId: matched.id, city: matched.city, mustChangePassword: true }).returning();
+          if (access.role === "doctor") await tx.insert(doctors).values({ userId: createdUser.id, hospitalId: matched.id, specialty: access.specialty || "Médecine générale", licenseNumber: access.licenseNumber!, yearsExperience: 0, status: "actif" });
+          await tx.update(accessRequests).set({ status: decision, reviewedAt: new Date() }).where(eq(accessRequests.id, access.id));
+          await tx.insert(auditLogs).values({ userId: user.id, action: "Accès approuvé", resource: access.applicantName, details: access.role });
+        });
+        credentials = { email: access.email, password, role: access.role };
+        return Response.json({ message: "Accès validé. Communiquez le mot de passe temporaire par un canal sécurisé ; le professionnel configurera son 2FA à la première connexion.", credentials });
       }
       await db.update(accessRequests).set({ status: decision, reviewedAt: new Date() }).where(eq(accessRequests.id, access.id));
-      await writeAudit(user.id, decision === "approuvé" ? "Accès approuvé" : "Accès refusé", access.applicantName, access.role);
-      return Response.json({ message: decision === "approuvé" ? "Accès validé. Communiquez les identifiants par un canal sécurisé." : "Demande refusée.", credentials });
+      await writeAudit(user.id, "Accès refusé", access.applicantName, access.role);
+      return Response.json({ message: "Demande refusée." });
+    }
+
+    if (action === "issuePasswordReset") {
+      if (role !== "admin") return fail("Action réservée à l'administration.", 403);
+      const targetId = asNumber(body.userId);
+      const [target] = await db.select().from(users).where(eq(users.id, targetId)).limit(1);
+      if (!target) return fail("Utilisateur introuvable.", 404);
+      const { code, expiresAt } = await issueResetCode(target.id, "admin");
+      await db.insert(notifications).values({ userId: target.id, title: "Réinitialisation de mot de passe", message: "Un code de réinitialisation a été émis par l'administration. Il expire dans 30 minutes.", category: "securite" });
+      await writeAudit(user.id, "Émission d'un code de réinitialisation", `Utilisateur #${target.id}`, "Code à usage unique, 30 minutes");
+      return Response.json({ message: `Code de réinitialisation généré pour ${target.email}. Transmettez-le après vérification d'identité.`, code, email: target.email, expiresAt: expiresAt.toISOString() });
     }
 
     if (action === "toggleUser") {
       if (role !== "admin") return fail("Accès réservé à l'administration.", 403);
       const [target] = await db.select().from(users).where(eq(users.id, asNumber(body.id))).limit(1);
-      if (!target || target.id === user.id || target.isDemo) return fail("Ce compte de démonstration ne peut pas être désactivé.");
+      if (!target || target.id === user.id) return fail("Vous ne pouvez pas modifier votre propre compte ici.");
       await db.update(users).set({ isActive: !target.isActive }).where(eq(users.id, target.id));
       if (target.isActive) await db.update(sessions).set({ revokedAt: new Date() }).where(eq(sessions.userId, target.id));
       await writeAudit(user.id, target.isActive ? "Désactivation de compte" : "Activation de compte", target.fullName);
       return Response.json({ message: `Compte ${target.isActive ? "désactivé" : "activé"}.` });
+    }
+
+    if (action === "createHospital") {
+      if (role !== "admin") return fail("Accès réservé à l'administration.", 403);
+      const name = asText(body.name);
+      const shortName = asText(body.shortName);
+      const city = asText(body.city);
+      const address = asText(body.address);
+      const phone = asText(body.phone);
+      const type = asText(body.type) || "Hôpital public";
+      const latitude = asNumber(body.latitude);
+      const longitude = asNumber(body.longitude);
+      const bedsTotal = asNumber(body.bedsTotal);
+      if (name.length < 3 || shortName.length < 2 || city.length < 2 || address.length < 5 || phone.length < 8) return fail("Complétez le nom, le sigle, la ville, l'adresse et le téléphone.");
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return fail("Coordonnées géographiques invalides.");
+      if (!Number.isInteger(bedsTotal) || bedsTotal < 0) return fail("Capacité en lits invalide.");
+      const [hospital] = await db.insert(hospitals).values({ name, shortName, city, address, phone, type, latitude, longitude, bedsTotal, bedsOccupied: 0 }).returning();
+      await writeAudit(user.id, "Création d'établissement", hospital.shortName, hospital.city);
+      return Response.json({ message: "Établissement créé.", hospital });
+    }
+
+    if (action === "createUser") {
+      if (role !== "admin") return fail("Accès réservé à l'administration.", 403);
+      const targetRole = asText(body.role);
+      if (!["patient", "doctor", "hospital"].includes(targetRole)) return fail("Rôle invalide.");
+      const fullName = asText(body.fullName);
+      const email = asText(body.email).toLowerCase();
+      const phone = asText(body.phone);
+      const city = asText(body.city) || "Cotonou";
+      if (fullName.length < 2 || !email.includes("@") || phone.length < 8) return fail("Nom, email et téléphone valides requis.");
+      const [existing] = await db.select({ id: users.id }).from(users).where(or(eq(users.email, email), eq(users.phone, phone))).limit(1);
+      if (existing) return fail("Cet email ou ce téléphone est déjà utilisé.", 409);
+      let hospitalId: number | null = null;
+      if (targetRole === "doctor" || targetRole === "hospital") {
+        hospitalId = asNumber(body.hospitalId);
+        const [hospital] = await db.select().from(hospitals).where(eq(hospitals.id, hospitalId)).limit(1);
+        if (!hospital || !hospital.isActive) return fail("Sélectionnez un établissement actif.");
+      }
+      const specialty = asText(body.specialty);
+      const licenseNumber = asText(body.licenseNumber);
+      if (targetRole === "doctor" && (specialty.length < 2 || licenseNumber.length < 3)) return fail("Spécialité et numéro d'ordre requis pour un médecin.");
+      const password = temporaryPassword();
+      const passwordHash = await hash(password, 12);
+      const npi = targetRole === "patient" ? `SP-${new Date().getFullYear()}-${randomInt(100000, 999999)}` : null;
+      const bloodGroup = asText(body.bloodGroup) || null;
+      const [created] = await db.transaction(async (tx) => {
+        const [createdUser] = await tx.insert(users).values({ fullName, email, phone, passwordHash, role: targetRole, npi, bloodGroup, city, hospitalId, mustChangePassword: true }).returning();
+        if (targetRole === "doctor" && hospitalId) await tx.insert(doctors).values({ userId: createdUser.id, hospitalId, specialty, licenseNumber, yearsExperience: Math.max(0, asNumber(body.yearsExperience) || 0), status: "actif" });
+        await tx.insert(auditLogs).values({ userId: user.id, action: "Création de compte", resource: createdUser.email, details: targetRole });
+        return [createdUser];
+      });
+      return Response.json({ message: "Compte créé. Transmettez le mot de passe temporaire par un canal sécurisé.", credentials: { email, password, role: targetRole }, user: { id: created.id } });
     }
 
     if (action === "grantConsent") {

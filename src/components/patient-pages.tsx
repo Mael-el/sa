@@ -1,16 +1,88 @@
 "use client";
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { QRCodeSVG } from "qrcode.react";
-import { Activity, AlertCircle, ArrowDownToLine, ArrowRight, BadgeCheck, Bell, CalendarCheck2, CalendarDays, Check, CheckCircle2, ChevronRight, Clock3, Copy, Download, Droplets, ExternalLink, FileHeart, FileText, Heart, HeartHandshake, HeartPulse, Hospital, Info, LocateFixed, MapPin, MessageCircle, Navigation, Phone, Pill, Plus, Search, Send, ShieldCheck, Sparkles, Stethoscope, Syringe, Volume2, Wallet, Wifi, WifiOff } from "lucide-react";
+import { copyToClipboard } from "@/lib/clipboard";
+import {
+  Activity,
+  AlertCircle,
+  ArrowRight,
+  BadgeCheck,
+  Bell,
+  CalendarDays,
+  Check,
+  CheckCircle2,
+  ChevronRight,
+  Clock,
+  Clock3,
+  Copy,
+  Download,
+  Droplets,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  FileHeart,
+  FileText,
+  Heart,
+  HeartHandshake,
+  HeartPulse,
+  Hospital,
+  Info,
+  LocateFixed,
+  LockKeyhole,
+  LogOut,
+  Mail,
+  MapPin,
+  MessageCircle,
+  Phone,
+  Pill,
+  Plus,
+  Search,
+  Send,
+  ShieldCheck,
+  Sparkles,
+  Stethoscope,
+  Syringe,
+  User,
+  UserRound,
+  Volume2,
+  Wallet,
+  WifiOff,
+} from "lucide-react";
 import { PrivacyCenter } from "@/components/privacy-center";
-import { Avatar, DateTile, EmptyState, MetricCard, Modal, PageHeading, SearchField, SectionHeading, StatusBadge, firstName, hour, longDate, money, relativeDay, shortDate, type ScreenProps } from "@/components/shared";
+import {
+  Avatar,
+  DateTile,
+  EmptyState,
+  MetricCard,
+  Modal,
+  PageHeading,
+  SearchField,
+  SectionHeading,
+  StatusBadge,
+  firstName,
+  hour,
+  longDate,
+  money,
+  relativeDay,
+  shortDate,
+  type ScreenProps,
+} from "@/components/shared";
 import type { Appointment, Hospital as HospitalType, Pharmacy } from "@/lib/types";
 import type { SymptomAssessment } from "@/lib/clinical";
+import { passwordProblem } from "@/lib/passwords";
+
+const BLOOD_GROUPS = ["O+", "O-", "A+", "A-", "B+", "B-", "AB+", "AB-"];
 
 export function PatientPage({ page, ...props }: ScreenProps & { page: string }) {
-  if (page === "records") return <PatientRecords {...props} />;
+  if (page === "profile") return <PatientProfile {...props} />;
   if (page === "appointments") return <PatientAppointments {...props} />;
+  if (page === "records") return <PatientRecords {...props} />;
+  if (page === "prescriptions") return <PatientPrescriptions {...props} />;
+  if (page === "results") return <PatientResults {...props} />;
+  if (page === "history") return <PatientHistory {...props} />;
   if (page === "payments") return <PatientPayments {...props} />;
   if (page === "donations") return <PatientDonations {...props} />;
   if (page === "locations") return <PatientLocations {...props} />;
@@ -21,17 +93,72 @@ export function PatientPage({ page, ...props }: ScreenProps & { page: string }) 
   return <PatientOverview {...props} />;
 }
 
+/* ------------------------------------------------------------------ */
+/* Carte d'identité et QR code Santé+                                 */
+/* ------------------------------------------------------------------ */
+
 function IdentityCard({ data, toast }: Pick<ScreenProps, "data" | "toast">) {
   const download = () => {
     const svg = document.getElementById("patient-identity-qr");
     if (!svg) return;
     const source = new XMLSerializer().serializeToString(svg);
     const url = URL.createObjectURL(new Blob([source], { type: "image/svg+xml;charset=utf-8" }));
-    const anchor = document.createElement("a"); anchor.href = url; anchor.download = `santeplus-qr-${data.user.npi || "patient"}.svg`; anchor.click(); URL.revokeObjectURL(url);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `santeplus-qr-${data.user.npi || "patient"}.svg`;
+    anchor.click();
+    URL.revokeObjectURL(url);
     toast("Votre QR code a été téléchargé.");
   };
-  return <div className="card identity-card"><div className="identity-top"><div className="identity-small-icon"><ShieldCheck size={18} /></div><span>IDENTITÉ SANTÉ</span><BadgeCheck size={19} className="identity-check" /></div><div className="qr-frame"><QRCodeSVG id="patient-identity-qr" value={`SANTEPLUS:${data.user.npi || data.user.id}`} size={144} level="H" bgColor="#ffffff" fgColor="#163348" marginSize={1} /></div><h3>{data.user.fullName}</h3><p>Identifiant Santé+ interne · non officiel</p><div className="npi-box"><span>ID SANTÉ+</span><strong>{data.user.npi || "En attente"}</strong><button onClick={() => { navigator.clipboard.writeText(data.user.npi || "").then(() => toast("NPI copié dans le presse-papiers.")); }} title="Copier le NPI" aria-label="Copier le NPI"><Copy size={15} /></button></div><button className="identity-download" onClick={download}><Download size={16} />Télécharger mon QR code</button></div>;
+
+  return (
+    <div className="card identity-card">
+      <div className="identity-top">
+        <div className="identity-small-icon"><ShieldCheck size={18} /></div>
+        <span>IDENTITÉ SANTÉ+</span>
+        <BadgeCheck size={19} className="identity-check" />
+      </div>
+      <div className="qr-frame">
+        <QRCodeSVG
+          id="patient-identity-qr"
+          value={`SANTEPLUS:${data.user.npi || data.user.id}`}
+          size={144}
+          level="H"
+          bgColor="#ffffff"
+          fgColor="#0f2a43"
+          marginSize={1}
+        />
+      </div>
+      <h3>{data.user.fullName}</h3>
+      <p>Identifiant Santé+ vérifié · Sécurisé</p>
+      <div className="npi-box">
+        <span>ID SANTÉ+</span>
+        <strong>{data.user.npi || "En attente"}</strong>
+        <button
+          onClick={() => {
+            copyToClipboard(data.user.npi || "").then((ok) => {
+              if (ok) toast("NPI copié dans le presse-papiers.");
+            });
+          }}
+          aria-label="Copier le NPI"
+        >
+          <Copy size={14} />
+        </button>
+      </div>
+      <div className="identity-grid">
+        <div><span>GROUPE SANGUIN</span><strong>{data.user.bloodGroup || "—"}</strong></div>
+        <div><span>VILLE</span><strong>{data.user.city || "—"}</strong></div>
+      </div>
+      <button className="btn btn-primary btn-sm btn-full" onClick={download}>
+        <Download size={14} /> Télécharger mon QR code
+      </button>
+    </div>
+  );
 }
+
+/* ------------------------------------------------------------------ */
+/* Modal de réservation de rendez-vous                                */
+/* ------------------------------------------------------------------ */
 
 function BookingModal({ open, onClose, data, act }: { open: boolean; onClose: () => void } & Pick<ScreenProps, "data" | "act">) {
   const [hospitalId, setHospitalId] = useState(String(data.hospitals[0]?.id || ""));
@@ -43,104 +170,1911 @@ function BookingModal({ open, onClose, data, act }: { open: boolean; onClose: ()
   const [type, setType] = useState("Consultation");
   const [careConsent, setCareConsent] = useState(false);
   const [saving, setSaving] = useState(false);
-  useEffect(() => { if (open) { setDoctorId(String(availableDoctors[0]?.id || "")); setDate(""); setReason(""); setCareConsent(false); } }, [open]);
+  const [prevOpen, setPrevOpen] = useState(open);
+
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (open) {
+      setDoctorId(String(availableDoctors[0]?.id || ""));
+      setDate("");
+      setReason("");
+      setCareConsent(false);
+    }
+  }
+
   const submit = async (event: FormEvent) => {
-    event.preventDefault(); setSaving(true);
-    try { await act("bookAppointment", { hospitalId: Number(hospitalId), doctorId: Number(doctorId), scheduledAt: new Date(`${date}T${time}:00`).toISOString(), reason, type, careConsent }); onClose(); }
-    catch { /* feedback provided by act */ }
-    finally { setSaving(false); }
+    event.preventDefault();
+    setSaving(true);
+    try {
+      await act("bookAppointment", {
+        hospitalId: Number(hospitalId),
+        doctorId: Number(doctorId),
+        scheduledAt: new Date(`${date}T${time}:00`).toISOString(),
+        reason,
+        type,
+        careConsent,
+      });
+      onClose();
+    } catch {
+      /* feedback fourni par act */
+    } finally {
+      setSaving(false);
+    }
   };
-  return <Modal open={open} onClose={onClose} title="Prendre rendez-vous" subtitle="Choisissez le professionnel et le créneau qui vous conviennent." size="medium"><form className="form-stack" onSubmit={submit}><label className="field"><span>Établissement de santé</span><select value={hospitalId} onChange={(event) => { setHospitalId(event.target.value); setDoctorId(String(data.doctors.find((doctor) => doctor.hospitalId === Number(event.target.value))?.id || "")); }} required>{data.hospitals.filter((hospital) => hospital.isActive).map((hospital) => <option key={hospital.id} value={hospital.id}>{hospital.shortName} · {hospital.city}</option>)}</select></label><div className="form-grid"><label className="field"><span>Médecin</span><select value={doctorId} onChange={(event) => setDoctorId(event.target.value)} required><option value="">Choisir un médecin</option>{availableDoctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctor.name} · {doctor.specialty}</option>)}</select></label><label className="field"><span>Type de visite</span><select value={type} onChange={(event) => setType(event.target.value)}><option>Consultation</option><option>Consultation de suivi</option><option>Bilan de santé</option><option>Téléconsultation</option></select></label></div>{availableDoctors.length === 0 && <div className="form-warning">Aucun médecin disponible ici. Choisissez un autre établissement.</div>}<div className="form-grid"><label className="field"><span>Date souhaitée</span><input type="date" value={date} onChange={(event) => setDate(event.target.value)} min={new Date().toISOString().slice(0, 10)} required /></label><label className="field"><span>Heure</span><select value={time} onChange={(event) => setTime(event.target.value)}>{["08:00", "08:30", "09:00", "09:30", "10:00", "10:30", "11:00", "11:30", "14:00", "14:30", "15:00", "15:30", "16:00"].map((slot) => <option key={slot}>{slot}</option>)}</select></label></div><label className="field"><span>Motif de consultation</span><textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Décrivez brièvement la raison de votre visite..." rows={3} required /></label><label className="privacy-checkbox"><input type="checkbox" checked={careConsent} onChange={(event) => setCareConsent(event.target.checked)} required /><span>J’autorise ce médecin et son établissement à consulter mon dossier pour ce rendez-vous, jusqu’à 90 jours après la date prévue. Je pourrai retirer cet accord dans <a href="/confidentialite" target="_blank" rel="noreferrer">Confidentialité</a>.</span></label><div className="form-info"><Info size={16} /><span>Une facture sera créée après confirmation. Vous pourrez la régler depuis l’espace Paiements.</span></div><div className="modal-actions"><button type="button" className="btn btn-outline" onClick={onClose}>Annuler</button><button className="btn btn-primary" disabled={saving || !availableDoctors.length}><CalendarCheck2 size={17} />{saving ? "Confirmation..." : "Confirmer le rendez-vous"}</button></div></form></Modal>;
+
+  return (
+    <Modal open={open} onClose={onClose} title="Prendre rendez-vous" subtitle="Choisissez le professionnel et le créneau qui vous conviennent." size="medium">
+      <form className="form-stack" onSubmit={submit}>
+        <label className="field">
+          <span>Établissement de santé *</span>
+          <select
+            value={hospitalId}
+            onChange={(event) => {
+              setHospitalId(event.target.value);
+              setDoctorId(String(data.doctors.find((doctor) => doctor.hospitalId === Number(event.target.value))?.id || ""));
+            }}
+            required
+          >
+            {data.hospitals.filter((hospital) => hospital.isActive).map((hospital) => (
+              <option key={hospital.id} value={hospital.id}>{hospital.shortName} · {hospital.city}</option>
+            ))}
+          </select>
+        </label>
+        <div className="form-grid">
+          <label className="field">
+            <span>Médecin disponible *</span>
+            <select value={doctorId} onChange={(event) => setDoctorId(event.target.value)} required>
+              {availableDoctors.length ? (
+                availableDoctors.map((doctor) => (
+                  <option key={doctor.id} value={doctor.id}>{doctor.name} · {doctor.specialty}</option>
+                ))
+              ) : (
+                <option value="">Aucun praticien disponible dans cet établissement</option>
+              )}
+            </select>
+          </label>
+          <label className="field">
+            <span>Type de prestation</span>
+            <select value={type} onChange={(event) => setType(event.target.value)}>
+              <option value="Consultation">Consultation générale</option>
+              <option value="Suivi">Consultation de suivi</option>
+              <option value="Urgence relative">Urgence relative</option>
+              <option value="Examen">Examen médical</option>
+            </select>
+          </label>
+        </div>
+        <div className="form-grid">
+          <label className="field">
+            <span>Date souhaitée *</span>
+            <input type="date" value={date} min={data.serverTime.slice(0, 10)} onChange={(event) => setDate(event.target.value)} required />
+          </label>
+          <label className="field">
+            <span>Heure *</span>
+            <input type="time" value={time} onChange={(event) => setTime(event.target.value)} required />
+          </label>
+        </div>
+        <label className="field">
+          <span>Motif de la consultation</span>
+          <input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Ex. Douleurs articulaires, contrôle de tension..." />
+        </label>
+        <label className="privacy-checkbox">
+          <input type="checkbox" checked={careConsent} onChange={(event) => setCareConsent(event.target.checked)} required />
+          <span>J’autorise expressément le médecin sélectionné à consulter mon dossier médical Santé+ pour la préparation et la réalisation de cette consultation.</span>
+        </label>
+        <div className="modal-actions">
+          <button type="button" className="btn btn-outline" onClick={onClose}>Annuler</button>
+          <button className="btn btn-primary" disabled={saving || !doctorId || !date}>
+            {saving ? "Confirmation en cours..." : "Confirmer le rendez-vous"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
 }
+
+/* ------------------------------------------------------------------ */
+/* Modal de reprogrammation                                           */
+/* ------------------------------------------------------------------ */
+
+function RescheduleModal({ id, onClose, data, act }: { id: number | null; onClose: () => void; data: ScreenProps["data"]; act: ScreenProps["act"] }) {
+  const appointment = data.appointments.find((item) => item.id === id);
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("09:00");
+  const [saving, setSaving] = useState(false);
+  const [prevId, setPrevId] = useState(id);
+
+  if (id !== prevId) {
+    setPrevId(id);
+    setDate("");
+    setTime("09:00");
+  }
+
+  const doctor = appointment ? data.doctors.find((item) => item.id === appointment.doctorId) : undefined;
+  const hospital = appointment ? data.hospitals.find((item) => item.id === appointment.hospitalId) : undefined;
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!appointment) return;
+    setSaving(true);
+    try {
+      await act("rescheduleAppointment", { id: appointment.id, scheduledAt: new Date(`${date}T${time}:00`).toISOString() });
+      onClose();
+    } catch {
+      /* feedback fourni par act */
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal open={Boolean(id)} onClose={onClose} title="Déplacer le rendez-vous" subtitle={doctor ? `${doctor.name} · ${hospital?.shortName || "Établissement"}` : undefined} size="small">
+      <form className="form-stack" onSubmit={submit}>
+        <div className="form-info">
+          <Clock3 size={16} />
+          <span>Rendez-vous actuel : {appointment ? longDate(appointment.scheduledAt) : ""} à {appointment ? hour(appointment.scheduledAt) : ""}.</span>
+        </div>
+        <div className="form-grid">
+          <label className="field">
+            <span>Nouvelle date *</span>
+            <input type="date" value={date} min={data.serverTime.slice(0, 10)} onChange={(event) => setDate(event.target.value)} required />
+          </label>
+          <label className="field">
+            <span>Nouvelle heure *</span>
+            <input type="time" value={time} onChange={(event) => setTime(event.target.value)} required />
+          </label>
+        </div>
+        <p className="form-help">Le médecin et l’établissement sont notifiés automatiquement de votre changement de date.</p>
+        <div className="modal-actions">
+          <button type="button" className="btn btn-outline" onClick={onClose}>Fermer</button>
+          <button className="btn btn-primary" disabled={saving || !date}>
+            {saving ? "Enregistrement..." : "Confirmer le déplacement"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Modal de détail / paiement                                         */
+/* ------------------------------------------------------------------ */
+
+function PaymentModal({ id, onClose, data }: { id: number | null; onClose: () => void; data: ScreenProps["data"] }) {
+  const payment = data.payments.find((item) => item.id === id);
+  const hospital = data.hospitals.find((item) => item.id === payment?.hospitalId);
+  return (
+    <Modal open={Boolean(id)} onClose={onClose} title="Régler une facture" subtitle="Paiement auprès de l’établissement." size="small">
+      {payment && (
+        <div className="form-stack">
+          <div className="payment-amount-box">
+            <span>Montant à régler</span>
+            <strong>{money(payment.amount)}</strong>
+            <small>{payment.title}</small>
+          </div>
+          <div className="form-warning">
+            <Info size={16} />
+            <span>Le paiement en ligne n’est pas encore activé. Réglez cette facture auprès de {hospital?.shortName || "l’établissement"} ; il enregistrera le paiement dans votre espace.</span>
+          </div>
+          {hospital?.phone && (
+            <a className="btn btn-outline btn-full" href={`tel:${hospital.phone}`}>
+              Appeler l’établissement ({hospital.phone})
+            </a>
+          )}
+          <button className="btn btn-primary btn-full" onClick={onClose}>Fermer</button>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* 1. Tableau de bord (Overview)                                      */
+/* ------------------------------------------------------------------ */
 
 function PatientOverview(props: ScreenProps) {
   const { data, go, toast, openEmergency } = props;
   const [booking, setBooking] = useState(false);
-  const upcoming = [...data.appointments].filter((item) => item.status === "confirmé" && new Date(item.scheduledAt).getTime() > Date.now()).sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
-  const recent = [...data.records].sort((a, b) => new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime()).slice(0, 3);
+  const now = new Date(data.serverTime).getTime();
+  const upcoming = [...data.appointments]
+    .filter((item) => item.status === "confirmé" && new Date(item.scheduledAt).getTime() > now)
+    .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
+  const recent = [...data.records]
+    .sort((a, b) => new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime())
+    .slice(0, 3);
   const doctorOf = (appointment: Appointment) => data.doctors.find((doctor) => doctor.id === appointment.doctorId);
-  return <div className="dashboard-page"><div className="welcome-row"><div><div className="welcome-kicker">VOTRE ESPACE PERSONNEL <span /></div><h1>Bonjour, {firstName(data.user.fullName)} <span className="wave">👋</span></h1><p>Voici un aperçu de votre santé aujourd’hui.</p></div><div className="today-label"><CalendarDays size={17} />{longDate(new Date())}</div></div><div className="patient-hero"><img className="hero-visual" src="/images/doctor-hero.jpg" alt="Médecin souriante dans une clinique" /><div className="hero-content"><div className="hero-eyebrow"><span />VOTRE SANTÉ, NOTRE PRIORITÉ</div><h2>Votre santé, toujours<br />à portée de main.</h2><p>Un dossier, tous vos soins. Prenez rendez-vous et suivez votre santé en toute simplicité.</p><div className="hero-actions"><button className="btn btn-dark" onClick={() => setBooking(true)}>Prendre rendez-vous<ArrowRight size={17} /></button><button className="hero-text-link" onClick={() => go("records")}>Voir mon dossier <ChevronRight size={16} /></button></div></div></div><div className="metrics-grid"><MetricCard icon={CalendarDays} label="Prochain rendez-vous" value={upcoming.length ? relativeDay(upcoming[0].scheduledAt) : "Aucun"} sub={upcoming.length ? `${hour(upcoming[0].scheduledAt)} · ${doctorOf(upcoming[0])?.name || "Médecin"}` : "Planifier une consultation"} tone="blue" onClick={() => go("appointments")} /><MetricCard icon={FileHeart} label="Documents médicaux" value={String(data.records.length + data.documents.length).padStart(2, "0")} sub="Votre historique, en un lieu" tone="purple" onClick={() => go("records")} /><MetricCard icon={Pill} label="Ordonnances" value={String(data.prescriptions.length).padStart(2, "0")} sub="Voir mes traitements" tone="orange" onClick={() => go("records")} /><MetricCard icon={Droplets} label="Groupe sanguin" value={data.user.bloodGroup || "—"} sub="Mon profil de donneur" tone="rose" onClick={() => go("donations")} /></div><div className="dashboard-columns"><div className="dashboard-main-column"><section className="card card-pad"><SectionHeading title="Mes prochains rendez-vous" subtitle="Vos consultations à venir" action="Voir tous les rendez-vous" onAction={() => go("appointments")} />{upcoming.length ? upcoming.slice(0, 2).map((appointment) => { const doctor = doctorOf(appointment); return <div className="appointment-row" key={appointment.id}><DateTile value={appointment.scheduledAt} /><Avatar name={doctor?.name || "Médecin"} size={43} /><div className="appointment-info"><strong>{doctor?.name || "Médecin"}</strong><span>{doctor?.specialty || appointment.type} · {data.hospitals.find((hospital) => hospital.id === appointment.hospitalId)?.shortName}</span></div><div className="appointment-time"><Clock3 size={16} />{hour(appointment.scheduledAt)}</div><StatusBadge status={appointment.status} /></div>; }) : <EmptyState icon={CalendarDays} title="Aucun rendez-vous à venir" description="Trouvez un médecin et réservez votre prochain créneau." action="Prendre rendez-vous" onAction={() => setBooking(true)} />}</section><section className="card card-pad"><SectionHeading title="Activité médicale récente" subtitle="Les dernières mises à jour de votre dossier" action="Voir mon dossier" onAction={() => go("records")} /><div className="recent-list">{recent.map((record) => <div className="recent-row" key={record.id}><div className={`list-icon ${record.category === "vaccin" ? "orange" : record.category === "analyse" ? "purple" : "mint"}`}>{record.category === "vaccin" ? <Syringe size={18} /> : record.category === "analyse" ? <Activity size={18} /> : <Stethoscope size={18} />}</div><div><strong>{record.title}</strong><span>{record.description}</span></div><small>{shortDate(record.recordedAt)}</small></div>)}</div></section></div><div className="dashboard-side-column"><IdentityCard data={data} toast={toast} /><div className="help-card"><div className="help-icon"><MessageCircle size={22} /></div><h3>Une question sur votre santé ?</h3><p>Décrivez vos symptômes et obtenez une première orientation, à tout moment.</p><button onClick={() => go("assistant")}>Parler à l’assistant <ArrowRight size={16} /></button></div><button className="emergency-inline" onClick={openEmergency}><span><HeartPulse size={19} /></span><span><strong>Besoin d’aide urgente ?</strong><small>Accéder aux numéros d’urgence</small></span><ChevronRight size={18} /></button></div></div><BookingModal open={booking} onClose={() => setBooking(false)} data={data} act={props.act} /></div>;
+
+  return (
+    <div className="dashboard-page">
+      <div className="welcome-row">
+        <div>
+          <div className="welcome-kicker">ESPACE PERSONNEL PATIENT <span /></div>
+          <h1>Bonjour, {firstName(data.user.fullName)} </h1>
+          <p>Bienvenue sur votre espace santé. Voici le point sur votre suivi médical.</p>
+        </div>
+        <div className="today-label"><CalendarDays size={17} />{longDate(new Date(data.serverTime))}</div>
+      </div>
+
+      <div className="patient-hero">
+        <Image className="hero-visual" src="/images/doctor-hero.jpg" alt="Médecin en consultation" width={900} height={700} priority />
+        <div className="hero-content">
+          <div className="hero-eyebrow"><span />VOTRE SANTÉ, NOTRE PRIORITÉ</div>
+          <h2>Votre santé, toujours<br />à portée de main.</h2>
+          <p>Un dossier unique et sécurisé. Prenez rendez-vous, consultez vos ordonnances et suivez vos soins en toute confiance.</p>
+          <div className="hero-actions">
+            <button className="btn btn-dark" onClick={() => setBooking(true)}>
+              Prendre rendez-vous<ArrowRight size={17} />
+            </button>
+            <button className="hero-text-link" onClick={() => go("records")}>
+              Consulter mon dossier <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="metrics-grid">
+        <MetricCard
+          icon={CalendarDays}
+          label="Prochain rendez-vous"
+          value={upcoming.length ? relativeDay(upcoming[0].scheduledAt) : "Aucun"}
+          sub={upcoming.length ? `${hour(upcoming[0].scheduledAt)} · ${doctorOf(upcoming[0])?.name || "Médecin"}` : "Planifier une consultation"}
+          tone="blue"
+          onClick={() => go("appointments")}
+        />
+        <MetricCard
+          icon={FileHeart}
+          label="Dossier médical"
+          value={String(data.records.length + data.documents.length).padStart(2, "0")}
+          sub="Événements enregistrés"
+          tone="purple"
+          onClick={() => go("records")}
+        />
+        <MetricCard
+          icon={Pill}
+          label="Ordonnances"
+          value={String(data.prescriptions.length).padStart(2, "0")}
+          sub="Voir mes prescriptions"
+          tone="orange"
+          onClick={() => go("prescriptions")}
+        />
+        <MetricCard
+          icon={Droplets}
+          label="Groupe sanguin"
+          value={data.user.bloodGroup || "—"}
+          sub="Mon profil donneur"
+          tone="rose"
+          onClick={() => go("donations")}
+        />
+      </div>
+
+      <div className="dashboard-columns">
+        <div className="dashboard-main-column">
+          <section className="card card-pad">
+            <SectionHeading
+              title="Mes prochains rendez-vous"
+              subtitle="Vos consultations médicales programmées"
+              action="Voir tous les rendez-vous"
+              onAction={() => go("appointments")}
+            />
+            {upcoming.length ? (
+              upcoming.slice(0, 2).map((appointment) => {
+                const doctor = doctorOf(appointment);
+                return (
+                  <div className="appointment-row" key={appointment.id}>
+                    <DateTile value={appointment.scheduledAt} />
+                    <Avatar name={doctor?.name || "Médecin"} size={43} />
+                    <div className="appointment-info">
+                      <strong>{doctor?.name || "Médecin"}</strong>
+                      <span>{doctor?.specialty || appointment.type} · {data.hospitals.find((h) => h.id === appointment.hospitalId)?.shortName}</span>
+                    </div>
+                    <div className="appointment-time"><Clock3 size={16} />{hour(appointment.scheduledAt)}</div>
+                    <StatusBadge status={appointment.status} />
+                  </div>
+                );
+              })
+            ) : (
+              <EmptyState
+                icon={CalendarDays}
+                title="Aucun rendez-vous à venir"
+                description="Trouvez un médecin partenaire et réservez votre créneau en quelques clics."
+                action="Prendre rendez-vous"
+                onAction={() => setBooking(true)}
+              />
+            )}
+          </section>
+
+          <section className="card card-pad">
+            <SectionHeading
+              title="Activité médicale récente"
+              subtitle="Dernières mises à jour de votre dossier de santé"
+              action="Voir tout mon dossier"
+              onAction={() => go("records")}
+            />
+            {recent.length ? (
+              <div className="recent-list">
+                {recent.map((record) => (
+                  <div className="recent-row" key={record.id}>
+                    <div className={`list-icon ${record.category === "vaccin" ? "orange" : record.category === "analyse" ? "purple" : "mint"}`}>
+                      {record.category === "vaccin" ? <Syringe size={18} /> : record.category === "analyse" ? <Activity size={18} /> : <Stethoscope size={18} />}
+                    </div>
+                    <div>
+                      <strong>{record.title}</strong>
+                      <span>{record.description}</span>
+                    </div>
+                    <small>{shortDate(record.recordedAt)}</small>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                icon={FileHeart}
+                title="Dossier en attente de consultations"
+                description="Vos comptes-rendus de consultations et résultats d'examens s'afficheront ici."
+              />
+            )}
+          </section>
+        </div>
+
+        <div className="dashboard-side-column">
+          <IdentityCard data={data} toast={toast} />
+          <div className="help-card">
+            <div className="help-icon"><MessageCircle size={22} /></div>
+            <h3>Une question sur votre santé ?</h3>
+            <p>Décrivez vos symptômes à l’assistant pour une première orientation et les consignes adaptées.</p>
+            <button onClick={() => go("assistant")}>
+              Consulter l’assistant <ArrowRight size={16} />
+            </button>
+          </div>
+          <button className="emergency-inline" onClick={openEmergency}>
+            <span><HeartPulse size={19} /></span>
+            <span><strong>Besoin d’aide urgente ?</strong><small>Numéros d’urgence médicale au Bénin</small></span>
+            <ChevronRight size={18} />
+          </button>
+        </div>
+      </div>
+
+      <BookingModal open={booking} onClose={() => setBooking(false)} data={data} act={props.act} />
+    </div>
+  );
 }
 
-function PatientRecords({ data, toast }: ScreenProps) {
-  const [tab, setTab] = useState("tout");
-  const tabs = [["tout", "Tout le dossier"], ["consultation", "Consultations"], ["ordonnances", "Ordonnances"], ["analyse", "Analyses"], ["vaccin", "Vaccins"], ["documents", "Documents"]];
-  const filtered = [...data.records].filter((record) => tab === "tout" || record.category === tab).sort((a, b) => new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime());
-  return <div><PageHeading eyebrow="MON ESPACE PATIENT" title="Mon dossier médical" subtitle="Toute votre histoire de santé, réunie et sécurisée au même endroit." action={<a className="btn btn-primary" href="/api/export?type=dossier"><Download size={17} />Télécharger le dossier</a>} /><div className="record-summary"><div><div className="record-summary-icon"><FileHeart size={25} /></div><h2>Votre parcours de santé, en un seul dossier.</h2><p>Vos informations vous accompagnent dans tous les établissements du réseau SANTÉ+.</p><div className="record-summary-chips"><span><ShieldCheck size={15} />Données protégées</span><span><BadgeCheck size={15} />ID Santé+ : {data.user.npi || "En attente"}</span></div></div><div className="record-summary-blood"><Droplets size={24} /><small>GROUPE SANGUIN</small><strong>{data.user.bloodGroup || "—"}</strong></div></div><div className="record-stats"><div><FileText size={20} /><strong>{data.records.filter((item) => item.category === "consultation").length}</strong><span>Consultations</span></div><div><Pill size={20} /><strong>{data.prescriptions.length}</strong><span>Ordonnances</span></div><div><Activity size={20} /><strong>{data.records.filter((item) => item.category === "analyse").length}</strong><span>Analyses</span></div><div><Syringe size={20} /><strong>{data.records.filter((item) => item.category === "vaccin").length}</strong><span>Vaccinations</span></div></div><section className="card card-pad"><SectionHeading title="Historique médical" subtitle="Consultez vos soins et documents par catégorie" /><div className="tabs scroll-tabs">{tabs.map(([key, label]) => <button key={key} className={tab === key ? "active" : ""} onClick={() => setTab(key)}>{label}</button>)}</div>{tab === "ordonnances" ? <div className="record-list">{data.prescriptions.length ? [...data.prescriptions].reverse().map((prescription) => <div className="record-entry" key={prescription.id}><div className="record-entry-icon orange"><Pill size={21} /></div><div className="record-entry-body"><div className="record-entry-top"><span className="type-tag orange">ORDONNANCE</span><span>{shortDate(prescription.createdAt)}</span></div><h3>{prescription.diagnosis}</h3><p>{prescription.medications.map((medication) => `${medication.name} ${medication.dosage}`).join(" · ")}</p><small>{data.doctors.find((doctor) => doctor.id === prescription.doctorId)?.name || "Médecin"}</small></div><a className="icon-button" href={`/api/export?type=prescription&id=${prescription.id}`} aria-label="Télécharger l'ordonnance"><Download size={18} /></a></div>) : <EmptyState title="Aucune ordonnance" />}</div> : tab === "documents" ? <div className="record-list">{data.documents.length ? data.documents.map((document) => <div className="record-entry" key={document.id}><div className="record-entry-icon purple"><FileText size={21} /></div><div className="record-entry-body"><div className="record-entry-top"><span className="type-tag purple">{document.category.toUpperCase()}</span><span>{shortDate(document.createdAt)}</span></div><h3>{document.title}</h3><p>{document.fileName}</p></div><a className="icon-button" href={`/api/documents/${document.id}`} aria-label="Télécharger le document"><Download size={18} /></a></div>) : <EmptyState title="Aucun document à télécharger" />}</div> : <div className="record-list">{filtered.length ? filtered.map((record) => <div className="record-entry" key={record.id}><div className={`record-entry-icon ${record.category === "vaccin" ? "blue" : record.category === "analyse" ? "purple" : "mint"}`}>{record.category === "vaccin" ? <Syringe size={21} /> : record.category === "analyse" ? <Activity size={21} /> : <Stethoscope size={21} />}</div><div className="record-entry-body"><div className="record-entry-top"><span className={`type-tag ${record.category === "vaccin" ? "blue" : record.category === "analyse" ? "purple" : "mint"}`}>{record.category.toUpperCase()}</span><span>{shortDate(record.recordedAt)}</span></div><h3>{record.title}</h3><p>{record.description}</p>{record.details && <small>{record.details}</small>}</div><CheckCircle2 size={18} className="record-check" /></div>) : <EmptyState title="Aucune donnée dans cette catégorie" />}</div>}</section><div className="record-security-note"><ShieldCheck size={19} /><span>Votre dossier est confidentiel. Chaque accès par un professionnel de santé est enregistré dans un journal d’audit.</span></div><div className="record-qr-inline"><IdentityCard data={data} toast={toast} /></div></div>;
+/* ------------------------------------------------------------------ */
+/* 2. Profil personnel                                                */
+/* ------------------------------------------------------------------ */
+
+function PatientProfile({ data, act, toast }: ScreenProps) {
+  const [form, setForm] = useState({
+    fullName: data.user.fullName,
+    email: data.user.email,
+    phone: data.user.phone || "",
+    city: data.user.city || "",
+    bloodGroup: data.user.bloodGroup || "",
+    birthDate: data.user.birthDate || "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setError("");
+    setSuccess("");
+    if (form.fullName.trim().length < 2) {
+      setError("Le nom complet doit comporter au moins 2 caractères.");
+      return;
+    }
+    if (!/^\+?[0-9 .()-]{8,40}$/.test(form.phone.trim())) {
+      setError("Le numéro de téléphone est invalide (8 chiffres minimum).");
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(form.email.trim())) {
+      setError("L'adresse email est invalide.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await act("updateProfile", {
+        fullName: form.fullName.trim(),
+        email: form.email.trim(),
+        phone: form.phone.trim(),
+        city: form.city.trim(),
+        bloodGroup: form.bloodGroup || null,
+        birthDate: form.birthDate || null,
+      });
+      setSuccess("Vos informations personnelles ont été mises à jour avec succès.");
+      toast("Profil mis à jour.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Impossible de mettre à jour le profil.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <PageHeading
+        eyebrow="MON COMPTE"
+        title="Profil personnel"
+        subtitle="Consultez et mettez à jour vos informations personnelles et coordonnées de santé."
+      />
+
+      <div className="profile-overview-card">
+        <div className="profile-overview-left">
+          <Avatar name={form.fullName} size={70} />
+          <div className="profile-overview-meta">
+            <h2>{form.fullName}</h2>
+            <p>Identifiant Santé+ : <strong>{data.user.npi || "En attente"}</strong></p>
+            <div className="profile-badges">
+              <span className="profile-badge-pill"><ShieldCheck size={13} /> Compte actif</span>
+              <span className="profile-badge-pill"><Droplets size={13} /> Groupe {form.bloodGroup || "non renseigné"}</span>
+              <span className="profile-badge-pill"><MapPin size={13} /> {form.city || "Bénin"}</span>
+            </div>
+          </div>
+        </div>
+        <div className="profile-overview-right">
+          <a className="btn btn-white btn-sm" href="/api/export?type=dossier">
+            <Download size={15} /> Exporter mon dossier complet
+          </a>
+        </div>
+      </div>
+
+      <div className="profile-layout-grid">
+        <div className="card card-pad">
+          <SectionHeading
+            title="Modifier mes coordonnées"
+            subtitle="Ces informations permettent aux soignants de vous contacter et de sécuriser votre prise en charge."
+          />
+          {error && <div className="form-error" role="alert">{error}</div>}
+          {success && <div className="form-info" role="status"><CheckCircle2 size={16} />{success}</div>}
+          <form className="form-stack" onSubmit={submit}>
+            <div className="form-grid">
+              <label className="field">
+                <span>Nom complet *</span>
+                <input
+                  value={form.fullName}
+                  onChange={(e) => setForm({ ...form, fullName: e.target.value })}
+                  placeholder="Prénom et nom"
+                  required
+                />
+              </label>
+              <label className="field">
+                <span>Numéro de téléphone *</span>
+                <div className="input-icon">
+                  <Phone size={16} />
+                  <input
+                    value={form.phone}
+                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                    placeholder="+229 97 00 00 00"
+                    required
+                  />
+                </div>
+              </label>
+            </div>
+            <div className="form-grid">
+              <label className="field">
+                <span>Adresse email *</span>
+                <div className="input-icon">
+                  <Mail size={16} />
+                  <input
+                    type="email"
+                    value={form.email}
+                    onChange={(e) => setForm({ ...form, email: e.target.value })}
+                    placeholder="vous@exemple.bj"
+                    required
+                  />
+                </div>
+              </label>
+              <label className="field">
+                <span>Ville de résidence</span>
+                <div className="input-icon">
+                  <MapPin size={16} />
+                  <input
+                    value={form.city}
+                    onChange={(e) => setForm({ ...form, city: e.target.value })}
+                    placeholder="Cotonou"
+                  />
+                </div>
+              </label>
+            </div>
+            <div className="form-grid">
+              <label className="field">
+                <span>Groupe sanguin</span>
+                <select
+                  value={form.bloodGroup}
+                  onChange={(e) => setForm({ ...form, bloodGroup: e.target.value })}
+                >
+                  <option value="">Non renseigné</option>
+                  {BLOOD_GROUPS.map((g) => (
+                    <option key={g} value={g}>{g}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Date de naissance</span>
+                <input
+                  type="date"
+                  value={form.birthDate}
+                  onChange={(e) => setForm({ ...form, birthDate: e.target.value })}
+                  max={new Date().toISOString().slice(0, 10)}
+                />
+              </label>
+            </div>
+            <div className="form-info">
+              <ShieldCheck size={16} />
+              <span>Vos données sont strictement protégées conformément à la loi 2017-20 et accessibles uniquement aux professionnels avec votre consentement.</span>
+            </div>
+            <button className="btn btn-primary" disabled={saving}>
+              {saving ? "Enregistrement en cours..." : "Enregistrer les modifications"}
+            </button>
+          </form>
+        </div>
+
+        <div className="profile-side-column">
+          <IdentityCard data={data} toast={toast} />
+        </div>
+      </div>
+    </div>
+  );
 }
+
+/* ------------------------------------------------------------------ */
+/* 3. Rendez-vous                                                     */
+/* ------------------------------------------------------------------ */
 
 function PatientAppointments(props: ScreenProps) {
   const { data, act, search } = props;
   const [booking, setBooking] = useState(false);
+  const [rescheduling, setRescheduling] = useState<number | null>(null);
   const [tab, setTab] = useState("avenir");
-  const appointments = [...data.appointments].filter((item) => (tab === "tous" || (tab === "avenir" ? item.status === "confirmé" && new Date(item.scheduledAt) > new Date() : item.status !== "confirmé" || new Date(item.scheduledAt) <= new Date())) && (!search || `${item.reason} ${data.doctors.find((doctor) => doctor.id === item.doctorId)?.name}`.toLowerCase().includes(search.toLowerCase()))).sort((a, b) => tab === "avenir" ? new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime() : new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime());
-  return <div><PageHeading eyebrow="MON AGENDA" title="Mes rendez-vous" subtitle="Retrouvez vos consultations et planifiez votre prochaine visite." action={<button className="btn btn-primary" onClick={() => setBooking(true)}><Plus size={18} />Prendre rendez-vous</button>} /><div className="appointments-top-banner"><div className="appointments-top-icon"><CalendarDays size={27} /></div><div><strong>Un suivi médical simplifié</strong><p>Choisissez votre établissement, votre médecin et le créneau qui vous convient.</p></div><button className="btn btn-white" onClick={() => setBooking(true)}>Réserver un créneau<ArrowRight size={16} /></button></div><section className="card card-pad"><div className="section-heading"><div><h2>Mes consultations</h2><p>{appointments.length} rendez-vous affiché{appointments.length > 1 ? "s" : ""}</p></div></div><div className="tabs">{[["avenir", "À venir"], ["historique", "Historique"], ["tous", "Tous"]].map(([key, label]) => <button key={key} className={tab === key ? "active" : ""} onClick={() => setTab(key)}>{label}</button>)}</div><div className="appointment-list">{appointments.length ? appointments.map((appointment) => { const doctor = data.doctors.find((item) => item.id === appointment.doctorId); const hospital = data.hospitals.find((item) => item.id === appointment.hospitalId); return <div className="appointment-detail-row" key={appointment.id}><DateTile value={appointment.scheduledAt} /><div className="appointment-detail-main"><div className="appointment-detail-head"><h3>{doctor?.name || "Médecin"}</h3><StatusBadge status={appointment.status} /></div><p>{doctor?.specialty || appointment.type} · {appointment.reason}</p><div className="appointment-meta"><span><MapPin size={14} />{hospital?.shortName || "Établissement"}</span><span><Clock3 size={14} />{hour(appointment.scheduledAt)}</span></div></div>{appointment.status === "confirmé" && new Date(appointment.scheduledAt) > new Date() && <button className="btn btn-outline btn-sm" onClick={async () => { if (window.confirm("Annuler ce rendez-vous ?")) { try { await act("cancelAppointment", { id: appointment.id }); } catch {} } }}>Annuler</button>}</div>; }) : <EmptyState icon={CalendarDays} title="Aucun rendez-vous ici" description="Vos prochaines consultations apparaîtront dans cette rubrique." action="Prendre rendez-vous" onAction={() => setBooking(true)} />}</div></section><BookingModal open={booking} onClose={() => setBooking(false)} data={data} act={act} /></div>;
+
+  const appointments = [...data.appointments]
+    .filter((item) => {
+      const matchSearch =
+        !search ||
+        `${item.reason} ${data.doctors.find((doctor) => doctor.id === item.doctorId)?.name}`.toLowerCase().includes(search.toLowerCase());
+      if (!matchSearch) return false;
+      if (tab === "tous") return true;
+      if (tab === "avenir") return item.status === "confirmé" && new Date(item.scheduledAt) > new Date();
+      return item.status !== "confirmé" || new Date(item.scheduledAt) <= new Date();
+    })
+    .sort((a, b) => (tab === "avenir" ? new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime() : new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime()));
+
+  return (
+    <div>
+      <PageHeading
+        eyebrow="MON AGENDA"
+        title="Mes rendez-vous"
+        subtitle="Retrouvez vos consultations et planifiez votre prochaine visite."
+        action={
+          <button className="btn btn-primary" onClick={() => setBooking(true)}>
+            <Plus size={18} /> Prendre rendez-vous
+          </button>
+        }
+      />
+
+      <div className="appointments-top-banner">
+        <div className="appointments-top-icon"><CalendarDays size={27} /></div>
+        <div>
+          <strong>Un suivi médical simplifié</strong>
+          <p>Choisissez votre établissement, votre praticien et l’horaire qui vous convient.</p>
+        </div>
+        <button className="btn btn-white" onClick={() => setBooking(true)}>
+          Réserver un créneau <ArrowRight size={16} />
+        </button>
+      </div>
+
+      <section className="card card-pad">
+        <div className="section-heading">
+          <div>
+            <h2>Mes consultations</h2>
+            <p>{appointments.length} rendez-vous affiché{appointments.length > 1 ? "s" : ""}</p>
+          </div>
+        </div>
+        <div className="tabs">
+          {[
+            ["avenir", "À venir"],
+            ["historique", "Historique"],
+            ["tous", "Tous"],
+          ].map(([key, label]) => (
+            <button key={key} className={tab === key ? "active" : ""} onClick={() => setTab(key)}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="appointment-list">
+          {appointments.length ? (
+            appointments.map((appointment) => {
+              const doctor = data.doctors.find((item) => item.id === appointment.doctorId);
+              const hospital = data.hospitals.find((item) => item.id === appointment.hospitalId);
+              const isFuture = appointment.status === "confirmé" && new Date(appointment.scheduledAt) > new Date();
+
+              return (
+                <div className="appointment-detail-row" key={appointment.id}>
+                  <DateTile value={appointment.scheduledAt} />
+                  <div className="appointment-detail-main">
+                    <div className="appointment-detail-head">
+                      <h3>{doctor?.name || "Médecin"}</h3>
+                      <StatusBadge status={appointment.status} />
+                    </div>
+                    <p>{doctor?.specialty || appointment.type} · {appointment.reason}</p>
+                    <div className="appointment-meta">
+                      <span><MapPin size={14} />{hospital?.shortName || "Établissement"}</span>
+                      <span><Clock3 size={14} />{hour(appointment.scheduledAt)}</span>
+                    </div>
+                  </div>
+
+                  {isFuture && (
+                    <div className="appointment-actions">
+                      <button className="btn btn-soft btn-sm" onClick={() => setRescheduling(appointment.id)}>
+                        Déplacer
+                      </button>
+                      <button
+                        className="btn btn-outline btn-sm"
+                        onClick={async () => {
+                          if (window.confirm("Êtes-vous sûr(e) de vouloir annuler ce rendez-vous ?")) {
+                            try {
+                              await act("cancelAppointment", { id: appointment.id });
+                            } catch {
+                              /* retour fourni par act */
+                            }
+                          }
+                        }}
+                      >
+                        Annuler
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          ) : (
+            <EmptyState
+              icon={CalendarDays}
+              title="Aucun rendez-vous ici"
+              description="Vos prochaines consultations médicales apparaîtront dans cette rubrique."
+              action="Prendre rendez-vous"
+              onAction={() => setBooking(true)}
+            />
+          )}
+        </div>
+      </section>
+
+      <BookingModal open={booking} onClose={() => setBooking(false)} data={data} act={act} />
+      <RescheduleModal id={rescheduling} onClose={() => setRescheduling(null)} data={data} act={act} />
+    </div>
+  );
 }
 
-function PaymentModal({ id, onClose, data, act }: { id: number | null; onClose: () => void } & Pick<ScreenProps, "data" | "act">) {
-  const [provider, setProvider] = useState("MTN MoMo");
-  const [phone, setPhone] = useState(data.user.phone || "");
-  const [saving, setSaving] = useState(false);
-  const payment = data.payments.find((item) => item.id === id);
-  const submit = async (event: FormEvent) => { event.preventDefault(); setSaving(true); try { await act("payBill", { id, provider, phone }); onClose(); } catch {} finally { setSaving(false); } };
-  return <Modal open={Boolean(id)} onClose={onClose} title="Régler une facture" subtitle="Choisissez votre opérateur Mobile Money." size="small">{payment && <form className="form-stack" onSubmit={submit}><div className="payment-amount-box"><span>Montant à régler</span><strong>{money(payment.amount)}</strong><small>{payment.title}</small></div><div className="field"><span>Opérateur Mobile Money</span><div className="provider-options"><button type="button" className={`provider-option mtn ${provider === "MTN MoMo" ? "selected" : ""}`} onClick={() => setProvider("MTN MoMo")}><span>MTN</span><strong>MoMo</strong>{provider === "MTN MoMo" && <Check size={16} />}</button><button type="button" className={`provider-option moov ${provider === "Moov Money" ? "selected" : ""}`} onClick={() => setProvider("Moov Money")}><span>Moov</span><strong>Money</strong>{provider === "Moov Money" && <Check size={16} />}</button></div></div><label className="field"><span>Numéro de téléphone</span><input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+229 ..." required /></label><div className="form-warning"><Info size={16} /><span>Mode démonstration : ce paiement est simulé. Aucun débit réel n’est effectué.</span></div><button className="btn btn-primary btn-full" disabled={saving}>{saving ? "Enregistrement..." : `Confirmer ${money(payment.amount)}`}<ArrowRight size={17} /></button></form>}</Modal>;
+/* ------------------------------------------------------------------ */
+/* 4. Dossier médical                                                 */
+/* ------------------------------------------------------------------ */
+
+function PatientRecords({ data, toast }: ScreenProps) {
+  const [tab, setTab] = useState("tout");
+  const tabs = [
+    ["tout", "Tout le dossier"],
+    ["consultation", "Consultations"],
+    ["ordonnances", "Ordonnances"],
+    ["analyse", "Analyses"],
+    ["vaccin", "Vaccins"],
+    ["documents", "Documents"],
+  ];
+  const filtered = [...data.records]
+    .filter((record) => tab === "tout" || record.category === tab)
+    .sort((a, b) => new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime());
+
+  return (
+    <div>
+      <PageHeading
+        eyebrow="MON ESPACE PATIENT"
+        title="Mon dossier médical"
+        subtitle="Toute votre histoire de santé, réunie et sécurisée au même endroit."
+        action={
+          <a className="btn btn-primary" href="/api/export?type=dossier">
+            <Download size={17} /> Télécharger le dossier
+          </a>
+        }
+      />
+
+      <div className="record-summary">
+        <div>
+          <div className="record-summary-icon"><FileHeart size={25} /></div>
+          <h2>Votre parcours de santé, en un seul dossier.</h2>
+          <p>Vos informations vous accompagnent dans tous les établissements du réseau SANTÉ+.</p>
+          <div className="record-summary-chips">
+            <span><ShieldCheck size={15} />Données protégées</span>
+            <span><BadgeCheck size={15} />ID Santé+ : {data.user.npi || "En attente"}</span>
+          </div>
+        </div>
+        <div className="record-summary-blood">
+          <Droplets size={24} />
+          <small>GROUPE SANGUIN</small>
+          <strong>{data.user.bloodGroup || "—"}</strong>
+        </div>
+      </div>
+
+      <div className="record-stats">
+        <div><FileText size={20} /><strong>{data.records.filter((item) => item.category === "consultation").length}</strong><span>Consultations</span></div>
+        <div><Pill size={20} /><strong>{data.prescriptions.length}</strong><span>Ordonnances</span></div>
+        <div><Activity size={20} /><strong>{data.records.filter((item) => item.category === "analyse").length}</strong><span>Analyses</span></div>
+        <div><Syringe size={20} /><strong>{data.records.filter((item) => item.category === "vaccin").length}</strong><span>Vaccinations</span></div>
+      </div>
+
+      <section className="card card-pad">
+        <SectionHeading title="Historique médical" subtitle="Consultez vos soins et documents par catégorie" />
+        <div className="tabs scroll-tabs">
+          {tabs.map(([key, label]) => (
+            <button key={key} className={tab === key ? "active" : ""} onClick={() => setTab(key)}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {tab === "ordonnances" ? (
+          <div className="record-list">
+            {data.prescriptions.length ? (
+              [...data.prescriptions].reverse().map((prescription) => (
+                <div className="record-entry" key={prescription.id}>
+                  <div className="record-entry-icon orange"><Pill size={21} /></div>
+                  <div className="record-entry-body">
+                    <div className="record-entry-top">
+                      <span className="type-tag orange">ORDONNANCE</span>
+                      <span>{shortDate(prescription.createdAt)}</span>
+                    </div>
+                    <h3>{prescription.diagnosis}</h3>
+                    <p>{prescription.medications.map((medication) => `${medication.name} ${medication.dosage}`).join(" · ")}</p>
+                    <small>{data.doctors.find((doctor) => doctor.id === prescription.doctorId)?.name || "Médecin"}</small>
+                  </div>
+                  <a className="icon-button" href={`/api/export?type=prescription&id=${prescription.id}`} aria-label="Télécharger l'ordonnance">
+                    <Download size={18} />
+                  </a>
+                </div>
+              ))
+            ) : (
+              <EmptyState title="Aucune ordonnance" />
+            )}
+          </div>
+        ) : tab === "documents" ? (
+          <div className="record-list">
+            {data.documents.length ? (
+              data.documents.map((document) => (
+                <div className="record-entry" key={document.id}>
+                  <div className="record-entry-icon purple"><FileText size={21} /></div>
+                  <div className="record-entry-body">
+                    <div className="record-entry-top">
+                      <span className="type-tag purple">{document.category.toUpperCase()}</span>
+                      <span>{shortDate(document.createdAt)}</span>
+                    </div>
+                    <h3>{document.title}</h3>
+                    <p>{document.fileName}</p>
+                  </div>
+                  <a className="icon-button" href={`/api/documents/${document.id}`} aria-label="Télécharger le document">
+                    <Download size={18} />
+                  </a>
+                </div>
+              ))
+            ) : (
+              <EmptyState title="Aucun document à télécharger" />
+            )}
+          </div>
+        ) : (
+          <div className="record-list">
+            {filtered.length ? (
+              filtered.map((record) => (
+                <div className="record-entry" key={record.id}>
+                  <div className={`record-entry-icon ${record.category === "vaccin" ? "blue" : record.category === "analyse" ? "purple" : "mint"}`}>
+                    {record.category === "vaccin" ? <Syringe size={21} /> : record.category === "analyse" ? <Activity size={21} /> : <Stethoscope size={21} />}
+                  </div>
+                  <div className="record-entry-body">
+                    <div className="record-entry-top">
+                      <span className={`type-tag ${record.category === "vaccin" ? "blue" : record.category === "analyse" ? "purple" : "mint"}`}>
+                        {record.category.toUpperCase()}
+                      </span>
+                      <span>{shortDate(record.recordedAt)}</span>
+                    </div>
+                    <h3>{record.title}</h3>
+                    <p>{record.description}</p>
+                    {record.details && <small>{record.details}</small>}
+                  </div>
+                  <CheckCircle2 size={18} className="record-check" />
+                </div>
+              ))
+            ) : (
+              <EmptyState title="Aucune donnée dans cette catégorie" />
+            )}
+          </div>
+        )}
+      </section>
+
+      <div className="record-security-note">
+        <ShieldCheck size={19} />
+        <span>Votre dossier est strictement confidentiel. Chaque accès par un professionnel de santé est tracé dans le journal d’audit.</span>
+      </div>
+      <div className="record-qr-inline"><IdentityCard data={data} toast={toast} /></div>
+    </div>
+  );
 }
+
+/* ------------------------------------------------------------------ */
+/* 5. Ordonnances                                                     */
+/* ------------------------------------------------------------------ */
+
+function PatientPrescriptions({ data, go }: ScreenProps) {
+  const [search, setSearch] = useState("");
+  const prescriptions = [...data.prescriptions]
+    .filter((script) => {
+      if (!search) return true;
+      const s = search.toLowerCase();
+      const doctor = data.doctors.find((d) => d.id === script.doctorId);
+      return (
+        script.diagnosis.toLowerCase().includes(s) ||
+        (doctor?.name || "").toLowerCase().includes(s) ||
+        script.medications.some((m) => m.name.toLowerCase().includes(s))
+      );
+    })
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  const totalMeds = data.prescriptions.reduce((sum, p) => sum + p.medications.length, 0);
+
+  return (
+    <div>
+      <PageHeading
+        eyebrow="MES TRAITEMENTS"
+        title="Mes ordonnances"
+        subtitle="Consultez le détail de vos ordonnances médicales et téléchargez les exemplaires officiels."
+        action={
+          <div className="search-field">
+            <Search size={16} />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Rechercher médicament ou médecin..."
+            />
+          </div>
+        }
+      />
+
+      <div className="metrics-grid three">
+        <MetricCard
+          icon={Pill}
+          label="Ordonnances émises"
+          value={String(data.prescriptions.length).padStart(2, "0")}
+          sub="Prescriptions enregistrées"
+          tone="orange"
+        />
+        <MetricCard
+          icon={Activity}
+          label="Médicaments prescrits"
+          value={String(totalMeds).padStart(2, "0")}
+          sub="Traitements cumulés"
+          tone="blue"
+        />
+        <MetricCard
+          icon={FileHeart}
+          label="Dossier médical lié"
+          value={String(data.records.length).padStart(2, "0")}
+          sub="Voir les consultations"
+          tone="purple"
+          onClick={() => go("records")}
+        />
+      </div>
+
+      <section className="card card-pad">
+        <SectionHeading
+          title="Historique des ordonnances"
+          subtitle={`${prescriptions.length} ordonnance(s) disponible(s)`}
+        />
+        {prescriptions.length ? (
+          <div className="prescription-meds-list">
+            {prescriptions.map((script) => {
+              const doctor = data.doctors.find((d) => d.id === script.doctorId);
+              const hospital = data.hospitals.find((h) => h.id === script.hospitalId);
+              return (
+                <article className="prescription-full-card" key={script.id}>
+                  <div className="prescription-card-head">
+                    <div>
+                      <span className="type-tag orange">ORDONNANCE #{script.id}</span>
+                      <h3>{script.diagnosis}</h3>
+                      <p>Prescrite par le {doctor?.name || "Médecin"} · {doctor?.specialty || "Médecine générale"} ({hospital?.shortName || "Établissement"})</p>
+                    </div>
+                    <a
+                      className="btn btn-outline btn-sm"
+                      href={`/api/export?type=prescription&id=${script.id}`}
+                      download
+                    >
+                      <Download size={15} /> Télécharger en PDF
+                    </a>
+                  </div>
+
+                  <div className="prescription-meds-list">
+                    {script.medications.map((med, index) => (
+                      <div className="prescription-med-row" key={index}>
+                        <div className="prescription-med-info">
+                          <strong>{med.name} — {med.dosage}</strong>
+                          <span>Posologie : {med.frequency}</span>
+                        </div>
+                        <span className="prescription-med-duration">{med.duration}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {script.notes && (
+                    <div className="form-info">
+                      <Info size={16} />
+                      <span><strong>Recommandations du praticien :</strong> {script.notes}</span>
+                    </div>
+                  )}
+
+                  <div className="prescription-card-foot">
+                    <span>Délivrée le {longDate(script.createdAt)}</span>
+                    <span className="muted-small">Document authentifié par signature électronique Santé+</span>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <EmptyState
+            icon={Pill}
+            title="Aucune ordonnance"
+            description="Vos ordonnances émises lors de vos consultations médicales apparaîtront ici."
+            action="Prendre rendez-vous"
+            onAction={() => go("appointments")}
+          />
+        )}
+      </section>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* 6. Résultats d'examens                                             */
+/* ------------------------------------------------------------------ */
+
+function PatientResults({ data, go }: ScreenProps) {
+  const [tab, setTab] = useState("tous");
+
+  const allResults = useMemo(() => {
+    const fromDocs = data.documents.map((d) => ({
+      id: `doc-${d.id}`,
+      documentId: d.id,
+      title: d.title,
+      category: d.category,
+      fileName: d.fileName,
+      mimeType: d.mimeType,
+      date: d.createdAt,
+      doctor: data.doctors.find((doc) => doc.id === d.doctorId)?.name || "Laboratoire / Praticien",
+      isFile: true,
+      description: "Document certifié transmis par le soignant.",
+    }));
+    const fromRecords = data.records
+      .filter((r) => r.category === "analyse" || r.category === "imagerie")
+      .map((r) => ({
+        id: `rec-${r.id}`,
+        documentId: null,
+        title: r.title,
+        category: r.category,
+        fileName: r.details || "Rapport clinique",
+        mimeType: "text/plain",
+        date: r.recordedAt,
+        doctor: "Service médical hospitalier",
+        isFile: false,
+        description: r.description,
+      }));
+    return [...fromDocs, ...fromRecords].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
+  }, [data.documents, data.records, data.doctors]);
+
+  const filtered = allResults.filter((r) => {
+    if (tab === "tous") return true;
+    if (tab === "biologie") return r.category === "analyse";
+    if (tab === "imagerie") return r.category === "imagerie";
+    return true;
+  });
+
+  return (
+    <div>
+      <PageHeading
+        eyebrow="EXAMENS & ANALYSES"
+        title="Résultats d'examens"
+        subtitle="Consultez et téléchargez vos analyses de laboratoire, radiographies et comptes-rendus médicaux."
+        action={
+          <a className="btn btn-outline" href="/api/export?type=dossier">
+            <Download size={16} /> Exporter le dossier complet
+          </a>
+        }
+      />
+
+      <div className="tabs">
+        {[
+          ["tous", "Tous les résultats"],
+          ["biologie", "Biologie médicale"],
+          ["imagerie", "Imagerie médicale"],
+        ].map(([key, label]) => (
+          <button key={key} className={tab === key ? "active" : ""} onClick={() => setTab(key)}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <section className="card card-pad">
+        <SectionHeading
+          title="Documents et comptes-rendus"
+          subtitle={`${filtered.length} résultat(s) disponible(s)`}
+        />
+        {filtered.length ? (
+          <div className="results-grid">
+            {filtered.map((item) => (
+              <div className="result-card" key={item.id}>
+                <div className="result-card-top">
+                  <div className={`list-icon ${item.category === "imagerie" ? "blue" : "purple"}`}>
+                    <Activity size={20} />
+                  </div>
+                  <div className="result-card-copy">
+                    <span className="type-tag purple">{item.category.toUpperCase()}</span>
+                    <h3>{item.title}</h3>
+                    <p>{item.doctor}</p>
+                  </div>
+                </div>
+
+                <div className="result-card-meta">
+                  <span>{shortDate(item.date)}</span>
+                  <span>{item.fileName}</span>
+                </div>
+
+                {item.isFile && item.documentId ? (
+                  <a
+                    className="btn btn-primary btn-sm btn-full"
+                    href={`/api/documents/${item.documentId}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <Download size={15} /> Télécharger le document
+                  </a>
+                ) : (
+                  <button className="btn btn-soft btn-sm btn-full" onClick={() => go("records")}>
+                    <FileHeart size={15} /> Voir dans le dossier
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            icon={Activity}
+            title="Aucun résultat d'examen"
+            description="Les résultats d'analyses et comptes-rendus publiés par vos soignants apparaîtront ici."
+            action="Voir mon dossier"
+            onAction={() => go("records")}
+          />
+        )}
+      </section>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* 7. Historique & Suivi médical                                      */
+/* ------------------------------------------------------------------ */
+
+function PatientHistory({ data }: ScreenProps) {
+  const [filter, setFilter] = useState("tout");
+
+  const timeline = useMemo(() => {
+    type Event = {
+      id: string;
+      date: string;
+      category: "soin" | "rdv" | "prescription" | "examen" | "consentement" | "securite";
+      title: string;
+      desc: string;
+      meta?: string;
+    };
+    const events: Event[] = [];
+
+    data.records.forEach((r) => {
+      events.push({
+        id: `rec-${r.id}`,
+        date: r.recordedAt,
+        category: r.category === "analyse" || r.category === "imagerie" ? "examen" : "soin",
+        title: r.title,
+        desc: r.description,
+        meta: r.details || undefined,
+      });
+    });
+
+    data.appointments.forEach((a) => {
+      const doc = data.doctors.find((d) => d.id === a.doctorId);
+      const hosp = data.hospitals.find((h) => h.id === a.hospitalId);
+      events.push({
+        id: `apt-${a.id}`,
+        date: a.scheduledAt,
+        category: "rdv",
+        title: `Rendez-vous ${a.status} : ${a.reason}`,
+        desc: `Consultation avec le ${doc?.name || "Médecin"} à ${hosp?.shortName || "l'établissement"}.`,
+        meta: `Statut : ${a.status}`,
+      });
+    });
+
+    data.prescriptions.forEach((p) => {
+      const doc = data.doctors.find((d) => d.id === p.doctorId);
+      events.push({
+        id: `pres-${p.id}`,
+        date: p.createdAt,
+        category: "prescription",
+        title: `Ordonnance : ${p.diagnosis}`,
+        desc: `${p.medications.length} médicament(s) prescrit(s) par le ${doc?.name || "Médecin"}.`,
+        meta: p.medications.map((m) => m.name).join(", "),
+      });
+    });
+
+    data.documents.forEach((d) => {
+      events.push({
+        id: `doc-${d.id}`,
+        date: d.createdAt,
+        category: "examen",
+        title: `Document ajouté : ${d.title}`,
+        desc: `Fichier ${d.fileName} enregistré dans votre dossier.`,
+      });
+    });
+
+    data.consents.forEach((c) => {
+      events.push({
+        id: `con-${c.id}`,
+        date: c.createdAt,
+        category: "consentement",
+        title: c.revokedAt ? "Consentement révoqué" : "Consentement de soins accordé",
+        desc: `Finalité : ${c.purpose}. Source : ${c.source}.`,
+        meta: c.revokedAt ? `Révoqué le ${shortDate(c.revokedAt)}` : `Valable jusqu'au ${shortDate(c.expiresAt)}`,
+      });
+    });
+
+    data.audit.forEach((a) => {
+      events.push({
+        id: `aud-${a.id}`,
+        date: a.createdAt,
+        category: "securite",
+        title: a.action,
+        desc: a.resource,
+        meta: a.details || undefined,
+      });
+    });
+
+    return events.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [data]);
+
+  const filtered = timeline.filter((e) => {
+    if (filter === "tout") return true;
+    if (filter === "soins") return e.category === "soin" || e.category === "rdv";
+    if (filter === "prescriptions") return e.category === "prescription" || e.category === "examen";
+    if (filter === "securite") return e.category === "securite" || e.category === "consentement";
+    return true;
+  });
+
+  return (
+    <div>
+      <PageHeading
+        eyebrow="CHRONOLOGIE MÉDICALE"
+        title="Historique & Suivi"
+        subtitle="Traçabilité chronologique complète de vos consultations, ordonnances, examens et activités de compte."
+        action={
+          <div className="table-filters">
+            <a className="btn btn-outline" href="/api/export?type=dossier">
+              <Download size={15} /> Export PDF
+            </a>
+            <a className="btn btn-outline" href="/api/privacy/export">
+              <Download size={15} /> Données JSON
+            </a>
+          </div>
+        }
+      />
+
+      <div className="tabs">
+        {[
+          ["tout", "Toute l'activité"],
+          ["soins", "Soins & Rendez-vous"],
+          ["prescriptions", "Ordonnances & Examens"],
+          ["securite", "Sécurité & Consentements"],
+        ].map(([key, label]) => (
+          <button key={key} className={filter === key ? "active" : ""} onClick={() => setFilter(key)}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <section className="card card-pad">
+        <SectionHeading
+          title="Fil chronologique"
+          subtitle={`${filtered.length} événement(s) répertorié(s)`}
+        />
+        {filtered.length ? (
+          <div className="timeline-container">
+            {filtered.map((event) => {
+              const icon =
+                event.category === "soin" ? <Stethoscope size={13} /> :
+                event.category === "rdv" ? <CalendarDays size={13} /> :
+                event.category === "prescription" ? <Pill size={13} /> :
+                event.category === "examen" ? <Activity size={13} /> :
+                event.category === "consentement" ? <ShieldCheck size={13} /> :
+                <LockKeyhole size={13} />;
+
+              return (
+                <div className="timeline-item" key={event.id}>
+                  <div className="timeline-dot">{icon}</div>
+                  <div className="timeline-card">
+                    <div className="timeline-header">
+                      <strong>{event.title}</strong>
+                      <span>{longDate(event.date)} · {hour(event.date)}</span>
+                    </div>
+                    <p>{event.desc}</p>
+                    {event.meta && <small>{event.meta}</small>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <EmptyState
+            icon={Clock}
+            title="Aucun historique"
+            description="Votre activité médicale et les événements de sécurité s'afficheront chronologiquement ici."
+          />
+        )}
+      </section>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* 8. Paiements                                                       */
+/* ------------------------------------------------------------------ */
 
 function PatientPayments(props: ScreenProps) {
   const { data } = props;
   const [selected, setSelected] = useState<number | null>(null);
   const due = data.payments.filter((item) => item.status !== "payé");
   const paid = data.payments.filter((item) => item.status === "payé");
-  return <div><PageHeading eyebrow="MES FINANCES" title="Paiements & factures" subtitle="Gardez un œil sur vos dépenses de santé et réglez vos factures facilement." /><div className="metrics-grid three"><MetricCard icon={Wallet} label="À régler" value={money(due.reduce((sum, item) => sum + item.amount, 0))} sub={`${due.length} facture${due.length > 1 ? "s" : ""} en attente`} tone="orange" /><MetricCard icon={CheckCircle2} label="Total réglé" value={money(paid.reduce((sum, item) => sum + item.amount, 0))} sub="Paiements enregistrés" tone="mint" /><MetricCard icon={FileText} label="Mes factures" value={data.payments.length} sub="Historique complet" tone="blue" /></div>{due.length > 0 && <div className="due-banner"><div className="due-icon"><Wallet size={21} /></div><div><strong>Vous avez {due.length} facture{due.length > 1 ? "s" : ""} en attente</strong><p>Réglez facilement par MTN MoMo ou Moov Money.</p></div><button className="btn btn-primary" onClick={() => setSelected(due[0].id)}>Payer maintenant<ArrowRight size={16} /></button></div>}<section className="card card-pad"><SectionHeading title="Historique des transactions" subtitle="Toutes vos factures et paiements" /><div className="table-wrap"><table className="data-table"><thead><tr><th>DESCRIPTION</th><th>DATE</th><th>MONTANT</th><th>MODE</th><th>STATUT</th><th></th></tr></thead><tbody>{[...data.payments].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map((payment) => <tr key={payment.id}><td><div className="table-primary"><span className="table-icon"><FileText size={17} /></span><div><strong>{payment.title}</strong><small>{data.hospitals.find((hospital) => hospital.id === payment.hospitalId)?.shortName}</small></div></div></td><td>{shortDate(payment.createdAt)}</td><td><strong>{money(payment.amount)}</strong></td><td>{payment.provider || "—"}</td><td><StatusBadge status={payment.status} /></td><td>{payment.status !== "payé" ? <button className="btn btn-primary btn-sm" onClick={() => setSelected(payment.id)}>Payer</button> : <span className="muted-small" title={payment.reference || ""}>{payment.reference || "Réglé"}</span>}</td></tr>)}</tbody></table></div></section><div className="secure-payment-note"><ShieldCheck size={18} />Vos informations financières restent privées. Les paiements affichés en démonstration ne débitent aucun compte.</div><PaymentModal id={selected} onClose={() => setSelected(null)} data={data} act={props.act} /></div>;
+
+  return (
+    <div>
+      <PageHeading eyebrow="FINANCES DE SANTÉ" title="Paiements & Factures" subtitle="Retrouvez l’historique de vos prestations de soins et vos reçus." />
+      <div className="metrics-grid three">
+        <MetricCard icon={Wallet} label="Factures en attente" value={String(due.length).padStart(2, "0")} sub="À régler en clinique" tone="orange" />
+        <MetricCard icon={CheckCircle2} label="Factures réglées" value={String(paid.length).padStart(2, "0")} sub="Prestations acquittées" tone="mint" />
+        <MetricCard icon={FileText} label="Total engagé" value={money(data.payments.reduce((sum, item) => sum + item.amount, 0))} sub="Dépenses cumulées" tone="blue" />
+      </div>
+
+      <section className="card card-pad">
+        <SectionHeading title="Factures à régler" subtitle="Règlements en attente auprès des établissements" />
+        {due.length ? (
+          <div className="payment-list">
+            {due.map((item) => (
+              <div className="payment-row" key={item.id}>
+                <div><strong>{item.title}</strong><span>{data.hospitals.find((h) => h.id === item.hospitalId)?.shortName || "Établissement"} · {shortDate(item.createdAt)}</span></div>
+                <div className="payment-amount">{money(item.amount)}</div>
+                <button className="btn btn-primary btn-sm" onClick={() => setSelected(item.id)}>Détails</button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState icon={CheckCircle2} title="Aucune facture en attente" description="Toutes vos prestations de soins sont actuellement à jour." />
+        )}
+      </section>
+
+      <section className="card card-pad" style={{ marginTop: 20 }}>
+        <SectionHeading title="Historique des paiements acquittés" subtitle="Reçus enregistrés par les établissements" />
+        {paid.length ? (
+          <div className="payment-list">
+            {paid.map((item) => (
+              <div className="payment-row" key={item.id}>
+                <div><strong>{item.title}</strong><span>{data.hospitals.find((h) => h.id === item.hospitalId)?.shortName} · Référence : {item.reference || `#${item.id}`}</span></div>
+                <div className="payment-amount">{money(item.amount)}</div>
+                <StatusBadge status="payé" />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState icon={Wallet} title="Aucun reçu pour l’instant" description="Vos règlements confirmés apparaîtront ici." />
+        )}
+      </section>
+
+      <PaymentModal id={selected} onClose={() => setSelected(null)} data={data} />
+    </div>
+  );
 }
 
+/* ------------------------------------------------------------------ */
+/* 9. Don de sang                                                     */
+/* ------------------------------------------------------------------ */
+
 function PatientDonations({ data, act }: ScreenProps) {
-  const [planning, setPlanning] = useState(false);
   const [hospitalId, setHospitalId] = useState(String(data.hospitals[0]?.id || ""));
   const [date, setDate] = useState("");
   const [saving, setSaving] = useState(false);
-  const completed = data.donations.filter((item) => item.status === "effectué").length;
-  const submit = async (event: FormEvent) => { event.preventDefault(); setSaving(true); try { await act("planDonation", { hospitalId: Number(hospitalId), date: new Date(`${date}T09:00:00`).toISOString() }); setPlanning(false); setDate(""); } catch {} finally { setSaving(false); } };
-  return <div><PageHeading eyebrow="SOLIDARITÉ SANTÉ" title="Don de sang" subtitle="Un geste simple peut changer une vie. Rejoignez notre communauté de donneurs." /><div className="donation-hero"><div className="donation-heart"><Heart size={46} fill="currentColor" /></div><div><span className="hero-eyebrow">ENSEMBLE, SAUVONS DES VIES</span><h2>Votre don est leur espoir.</h2><p>Chaque don de sang peut aider jusqu’à trois personnes. Votre générosité fait la différence.</p><button className="btn btn-white" onClick={() => setPlanning(true)}>Planifier un don <ArrowRight size={17} /></button></div><div className="donation-hero-rings"><Heart size={110} /></div></div><div className="metrics-grid three"><MetricCard icon={Droplets} label="Mon groupe sanguin" value={data.user.bloodGroup || "—"} sub="Votre profil de donneur" tone="rose" /><MetricCard icon={HeartHandshake} label="Dons effectués" value={completed} sub="Merci pour votre engagement" tone="mint" /><MetricCard icon={BadgeCheck} label="Mon badge" value={completed >= 1 ? "Donneur engagé" : "Futur donneur"} sub={completed >= 1 ? "Vous faites la différence" : "Votre premier don vous attend"} tone="orange" /></div><div className="dashboard-columns donation-columns"><section className="card card-pad"><SectionHeading title="Mes dons de sang" subtitle="Suivez votre engagement solidaire" action="Planifier un don" onAction={() => setPlanning(true)} />{data.donations.length ? [...data.donations].reverse().map((donation) => <div className="donation-row" key={donation.id}><div className="list-icon rose"><Droplets size={19} /></div><div><strong>Don de sang · {data.user.bloodGroup || "Groupe non renseigné"}</strong><span>{data.hospitals.find((hospital) => hospital.id === donation.hospitalId)?.shortName || "Établissement"} · {shortDate(donation.donatedAt)}</span></div><StatusBadge status={donation.status} /></div>) : <EmptyState icon={Droplets} title="Aucun don enregistré" description="Votre premier geste de solidarité commence ici." action="Planifier un don" onAction={() => setPlanning(true)} />}</section><aside className="card card-pad donation-info"><div className="list-icon rose"><Heart size={21} /></div><h3>Pourquoi donner son sang ?</h3><p>Le sang est indispensable aux urgences, aux interventions chirurgicales et à de nombreux traitements.</p><ul><li><CheckCircle2 size={16} />Un acte volontaire et solidaire</li><li><CheckCircle2 size={16} />Un suivi de vos dons dans votre espace</li><li><CheckCircle2 size={16} />Des alertes en cas de besoin</li></ul></aside></div><Modal open={planning} onClose={() => setPlanning(false)} title="Planifier un don de sang" subtitle="Choisissez un centre et une date pour votre prochain don."><form className="form-stack" onSubmit={submit}><label className="field"><span>Centre de don</span><select value={hospitalId} onChange={(event) => setHospitalId(event.target.value)}>{data.hospitals.map((hospital) => <option key={hospital.id} value={hospital.id}>{hospital.shortName} · {hospital.city}</option>)}</select></label><label className="field"><span>Date souhaitée</span><input type="date" value={date} onChange={(event) => setDate(event.target.value)} min={new Date().toISOString().slice(0, 10)} required /></label><div className="form-info"><Info size={16} />Le centre vous contactera pour confirmer les modalités de votre don.</div><div className="modal-actions"><button type="button" className="btn btn-outline" onClick={() => setPlanning(false)}>Annuler</button><button className="btn btn-primary" disabled={saving}>{saving ? "Enregistrement..." : "Planifier mon don"}</button></div></form></Modal></div>;
+  const donations = data.donations;
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      await act("planDonation", { hospitalId: Number(hospitalId), date });
+      setDate("");
+    } catch {
+      /* feedback fourni par act */
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <PageHeading eyebrow="SOLIDARITÉ NATIONALE" title="Don de sang" subtitle="Chaque don sauve des vies dans les hôpitaux béninois." />
+      <div className="donation-hero">
+        <div className="donation-heart"><Heart size={30} /></div>
+        <div>
+          <h2>Un geste simple qui sauve trois vies.</h2>
+          <p>Planifiez votre prochain don de sang dans l’établissement partenaire de votre choix.</p>
+        </div>
+      </div>
+
+      <div className="dashboard-columns">
+        <div className="dashboard-main-column">
+          <section className="card card-pad">
+            <SectionHeading title="Planifier un don" subtitle="Choisissez votre centre de collecte" />
+            <form className="form-stack" onSubmit={submit}>
+              <label className="field">
+                <span>Centre de collecte *</span>
+                <select value={hospitalId} onChange={(e) => setHospitalId(e.target.value)} required>
+                  {data.hospitals.map((h) => (
+                    <option key={h.id} value={h.id}>{h.name} · {h.city}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Date souhaitée *</span>
+                <input type="date" value={date} min={data.serverTime.slice(0, 10)} onChange={(e) => setDate(e.target.value)} required />
+              </label>
+              <button className="btn btn-primary" disabled={saving || !date}>
+                {saving ? "Enregistrement..." : "Confirmer mon intention de don"}
+              </button>
+            </form>
+          </section>
+
+          <section className="card card-pad">
+            <SectionHeading title="Mes dons de sang" subtitle="Historique de vos participations" />
+            {donations.length ? (
+              <div className="recent-list">
+                {donations.map((d) => (
+                  <div className="recent-row" key={d.id}>
+                    <div className="list-icon rose"><Droplets size={18} /></div>
+                    <div>
+                      <strong>Don de sang · {data.hospitals.find((h) => h.id === d.hospitalId)?.shortName || "Centre national"}</strong>
+                      <span>Statut : {d.status}</span>
+                    </div>
+                    <small>{shortDate(d.donatedAt)}</small>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyState icon={Droplets} title="Aucun don planifié" description="Planifiez votre premier don dès aujourd’hui." />
+            )}
+          </section>
+        </div>
+
+        <div className="dashboard-side-column">
+          <div className="card card-pad">
+            <SectionHeading title="Mon profil donneur" subtitle="Informations transfusionnelles" />
+            <div className="blood-profile-box">
+              <Droplets size={32} className="blood-drop-icon" />
+              <div>
+                <span>Groupe sanguin</span>
+                <strong>{data.user.bloodGroup || "Non renseigné"}</strong>
+              </div>
+            </div>
+            <p className="setting-note">Votre groupe sanguin est vérifié lors de votre premier don médicalisé.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
+
+/* ------------------------------------------------------------------ */
+/* 10. Trouver un centre                                              */
+/* ------------------------------------------------------------------ */
 
 function PatientLocations({ data }: ScreenProps) {
-  const [type, setType] = useState<"hospital" | "pharmacy">("hospital");
+  const [tab, setTab] = useState<"hospitals" | "pharmacies">("hospitals");
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<number | null>(null);
-  const items: (HospitalType | Pharmacy)[] = type === "hospital" ? data.hospitals : data.pharmacies;
-  const filtered = items.filter((item) => `${item.name} ${item.city} ${item.address}`.toLowerCase().includes(query.toLowerCase()));
-  const active = items.find((item) => item.id === selected) || filtered[0];
-  const lat = active?.latitude || 6.365; const lon = active?.longitude || 2.423;
-  const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${lon - 0.035}%2C${lat - 0.025}%2C${lon + 0.035}%2C${lat + 0.025}&layer=mapnik&marker=${lat}%2C${lon}`;
-  return <div><PageHeading eyebrow="PRÈS DE VOUS" title="Trouver un centre de santé" subtitle="Localisez les hôpitaux et pharmacies du réseau, et contactez-les directement." /><div className="location-toolbar"><div className="segmented"><button className={type === "hospital" ? "active" : ""} onClick={() => { setType("hospital"); setSelected(null); }}><Hospital size={17} />Hôpitaux</button><button className={type === "pharmacy" ? "active" : ""} onClick={() => { setType("pharmacy"); setSelected(null); }}><Pill size={17} />Pharmacies</button></div><SearchField value={query} onChange={setQuery} placeholder="Rechercher un lieu, une ville..." /></div><div className="location-layout"><div className="location-list">{filtered.length ? filtered.map((item) => <button className={`location-item ${active?.id === item.id ? "selected" : ""}`} key={item.id} onClick={() => setSelected(item.id)}><div className={`location-item-icon ${type === "pharmacy" ? "pharmacy" : ""}`}>{type === "hospital" ? <Hospital size={21} /> : <Pill size={21} />}</div><div><strong>{"shortName" in item ? item.shortName : item.name}</strong><span><MapPin size={14} />{item.address}</span><small>{item.city} · {"type" in item ? item.type : item.hours}</small></div><ChevronRight size={17} /></button>) : <EmptyState icon={Search} title="Aucun résultat" description="Essayez une autre recherche." />}</div><div className="map-panel"><iframe title={`Carte interactive de ${active?.name || "Cotonou"}`} src={mapUrl} loading="lazy" referrerPolicy="no-referrer" /><div className="map-overlay-badge"><LocateFixed size={15} />Carte interactive · OpenStreetMap</div>{active && <div className="map-place-card"><div><strong>{"shortName" in active ? active.shortName : active.name}</strong><span><MapPin size={13} />{active.address}, {active.city}</span></div><div className="map-place-actions"><a className="btn btn-primary btn-sm" href={`tel:${active.phone.replace(/\s/g, "")}`}><Phone size={15} />Appeler</a><a className="btn btn-outline btn-sm" href={`https://www.openstreetmap.org/directions?to=${active.latitude}%2C${active.longitude}`} target="_blank" rel="noreferrer"><Navigation size={15} />Itinéraire</a></div></div>}</div></div><p className="map-attribution">Les coordonnées et horaires de démonstration sont indicatifs. Vérifiez les informations directement auprès de l’établissement.</p></div>;
+  const hospitals = data.hospitals.filter((h) => !query || `${h.name} ${h.city}`.toLowerCase().includes(query.toLowerCase()));
+  const pharmacies = data.pharmacies.filter((p) => !query || `${p.name} ${p.city}`.toLowerCase().includes(query.toLowerCase()));
+
+  return (
+    <div>
+      <PageHeading eyebrow="RÉSEAU DE SANTÉ" title="Trouver un centre" subtitle="Hôpitaux, cliniques partenaires et pharmacies disponibles au Bénin." />
+      <div className="location-toolbar">
+        <div className="tabs">
+          <button className={tab === "hospitals" ? "active" : ""} onClick={() => setTab("hospitals")}>Hôpitaux & Cliniques ({hospitals.length})</button>
+          <button className={tab === "pharmacies" ? "active" : ""} onClick={() => setTab("pharmacies")}>Pharmacies ({pharmacies.length})</button>
+        </div>
+        <div className="search-field">
+          <Search size={16} />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Filtrer par nom ou ville..." />
+        </div>
+      </div>
+
+      <div className="location-grid">
+        {tab === "hospitals" ? (
+          hospitals.length ? (
+            hospitals.map((h) => (
+              <div className="location-card" key={h.id}>
+                <div className="location-card-head">
+                  <div>
+                    <span className="type-tag blue">{h.type.toUpperCase()}</span>
+                    <h3>{h.name}</h3>
+                  </div>
+                  <Hospital size={22} className="location-icon" />
+                </div>
+                <p><MapPin size={14} /> {h.address}, {h.city}</p>
+                {h.phone && <p><Phone size={14} /> <a href={`tel:${h.phone}`}>{h.phone}</a></p>}
+                <div className="location-card-foot">
+                  <span>Capacité : {h.bedsTotal} lits ({h.bedsTotal - h.bedsOccupied} disponibles)</span>
+                  <StatusBadge status={h.isActive ? "actif" : "inactif"} />
+                </div>
+              </div>
+            ))
+          ) : (
+            <EmptyState title="Aucun établissement trouvé" />
+          )
+        ) : pharmacies.length ? (
+          pharmacies.map((p) => (
+            <div className="location-card" key={p.id}>
+              <div className="location-card-head">
+                <div>
+                  <span className="type-tag mint">PHARMACIE</span>
+                  <h3>{p.name}</h3>
+                </div>
+                <Pill size={22} className="location-icon" />
+              </div>
+              <p><MapPin size={14} /> {p.address}, {p.city}</p>
+              {p.phone && <p><Phone size={14} /> <a href={`tel:${p.phone}`}>{p.phone}</a></p>}
+              <div className="location-card-foot">
+                <span>Horaires : {p.hours || "Ouvert"}</span>
+                <span className="status-badge status-positive"><i></i> Ouverte</span>
+              </div>
+            </div>
+          ))
+        ) : (
+          <EmptyState title="Aucune pharmacie trouvée" />
+        )}
+      </div>
+    </div>
+  );
 }
 
+/* ------------------------------------------------------------------ */
+/* 11. Assistant santé                                                */
+/* ------------------------------------------------------------------ */
+
 function PatientAssistant({ go, openEmergency }: ScreenProps) {
-  const [symptoms, setSymptoms] = useState("");
-  const [assessment, setAssessment] = useState<SymptomAssessment | null>(null);
-  const [aiConsent, setAiConsent] = useState(false);
-  const [aiAdvice, setAiAdvice] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Array<{ sender: "user" | "bot"; text: string; assessment?: SymptomAssessment }>>([
+    {
+      sender: "bot",
+      text: "Bonjour ! Je suis l'assistant d'orientation SANTÉ+. Décrivez vos symptômes et je vous guiderai vers le service ou le professionnel adapté. En cas d'urgence vitale, contactez immédiatement le SAMU (112 / 118).",
+    },
+  ]);
+  const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const submit = async (event: FormEvent) => { event.preventDefault(); setLoading(true); setError(""); try { const response = await fetch("/api/assistant", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symptoms, aiConsent }) }); const result = await response.json(); if (!response.ok) throw new Error(result.error || "Analyse indisponible."); setAssessment(result.assessment); setAiAdvice(result.aiAdvice || null); } catch (err) { setError(err instanceof Error ? err.message : "Une erreur est survenue."); } finally { setLoading(false); } };
-  return <div><PageHeading eyebrow="ASSISTANCE SANTÉ" title="Comment vous sentez-vous ?" subtitle="Décrivez ce que vous ressentez pour obtenir une première orientation, en toute confidentialité." /><div className="assistant-layout"><div className="assistant-main"><div className="assistant-welcome"><div className="assistant-orb"><Sparkles size={26} /></div><span>ASSISTANT SANTÉ+</span><h2>Un premier pas vers les bons soins.</h2><p>Expliquez vos symptômes avec vos mots. Notre outil d’orientation vous aidera à identifier la prochaine étape adaptée.</p></div><form className="card card-pad assistant-form" onSubmit={submit}><label htmlFor="symptoms">Décrivez vos symptômes</label><p>Depuis quand ? À quelle fréquence ? Quelle intensité ?</p><textarea id="symptoms" value={symptoms} onChange={(event) => setSymptoms(event.target.value)} rows={6} placeholder="Par exemple : J'ai mal à la tête depuis deux jours et je me sens fatigué(e)..." minLength={10} maxLength={1500} required /><label className="privacy-checkbox assistant-ai-consent"><input type="checkbox" checked={aiConsent} onChange={(event) => setAiConsent(event.target.checked)} /><span>J’accepte qu’une description de mes symptômes soit transmise au fournisseur d’IA uniquement si ce service est activé. Sinon, l’analyse reste locale. <a href="/confidentialite" target="_blank" rel="noreferrer">En savoir plus</a>.</span></label><div className="assistant-form-footer"><span>{symptoms.length} / 1 500 caractères</span><button className="btn btn-primary" disabled={loading || symptoms.trim().length < 10}>{loading ? "Analyse en cours..." : "Obtenir une orientation"}<Send size={16} /></button></div>{error && <div className="form-error">{error}</div>}</form>{assessment && <div className={`assessment-card assessment-${assessment.level}`}><div className="assessment-heading"><div className="assessment-icon">{assessment.level === "urgence" ? <AlertCircle size={24} /> : assessment.level === "rapide" ? <Clock3 size={24} /> : <HeartPulse size={24} />}</div><div><span>ORIENTATION INDICATIVE</span><h3>{assessment.title}</h3></div></div><p>{assessment.summary}</p>{aiAdvice && <div className="ai-advice"><strong>Complément d’orientation assisté par IA</strong><p>{aiAdvice}</p></div>}{aiConsent && !aiAdvice && <div className="ai-local-note">Service IA externe indisponible : seules les règles d’orientation locales ont été utilisées.</div>}<ul>{assessment.recommendations.map((recommendation) => <li key={recommendation}><CheckCircle2 size={17} />{recommendation}</li>)}</ul><div className="assessment-actions">{assessment.level === "urgence" && <button className="btn btn-danger" onClick={openEmergency}><Phone size={16} />Numéros d’urgence</button>}<button className="btn btn-outline" onClick={() => go("appointments")}><CalendarDays size={16} />Prendre rendez-vous</button></div></div>}</div><aside className="assistant-side"><div className="card card-pad"><div className="list-icon mint"><ShieldCheck size={20} /></div><h3>Votre confidentialité compte</h3><p>Votre description n’est pas enregistrée dans le journal d’audit. Seule l’utilisation du service est tracée.</p></div><div className="assistant-help-card"><HeartPulse size={25} /><h3>Une urgence ?</h3><p>En cas de symptômes graves, n’attendez pas une analyse en ligne.</p><button onClick={openEmergency}>Appeler les secours <ArrowRight size={15} /></button></div><div className="assistant-disclaimer"><Info size={17} /><span>Cet outil utilise des règles d’orientation indicatives, pas un diagnostic médical. Seul un professionnel de santé peut vous examiner.</span></div></aside></div></div>;
+
+  const send = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!input.trim() || loading) return;
+    const text = input.trim();
+    setInput("");
+    setMessages((prev) => [...prev, { sender: "user", text }]);
+    setLoading(true);
+    try {
+      const response = await fetch("/api/assistant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text }),
+      });
+      const data = await response.json();
+      setMessages((prev) => [
+        ...prev,
+        {
+          sender: "bot",
+          text: data.reply || "Je vous invite à consulter un médecin pour une évaluation clinique complète.",
+          assessment: data.assessment,
+        },
+      ]);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        { sender: "bot", text: "Impossible de joindre le service d'orientation pour le moment. Consultez un praticien." },
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div>
+      <PageHeading eyebrow="ORIENTATION CLINIQUE" title="Assistant de santé" subtitle="Évaluez vos symptômes et obtenez des conseils d'orientation sécurisés." />
+      <div className="assistant-layout">
+        <div className="card assistant-chat-card">
+          <div className="chat-messages">
+            {messages.map((m, i) => (
+              <div className={`chat-bubble ${m.sender}`} key={i}>
+                <p>{m.text}</p>
+                {m.assessment?.level === "urgence" && (
+                  <div className="alert-urgent">
+                    <AlertCircle size={16} />
+                    <span>Urgence détectée : consultez sans délai un service d’urgences.</span>
+                  </div>
+                )}
+              </div>
+            ))}
+            {loading && <div className="chat-bubble bot"><span className="typing-dots">Analyse en cours...</span></div>}
+          </div>
+          <form className="chat-input-row" onSubmit={send}>
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Décrivez ce que vous ressentez (fièvre, douleurs, toux...)"
+              disabled={loading}
+            />
+            <button className="btn btn-primary" disabled={loading || !input.trim()}>
+              <Send size={16} />
+            </button>
+          </form>
+        </div>
+
+        <div className="assistant-side">
+          <div className="card card-pad">
+            <SectionHeading title="Avertissement médical" subtitle="Outil d’aide à la décision" />
+            <p className="setting-note">Cet assistant ne fournit pas de diagnostic médical et ne remplace pas une consultation avec un médecin qualifié.</p>
+            <button className="btn btn-primary btn-full" onClick={() => go("appointments")}>
+              <CalendarDays size={16} /> Prendre un rendez-vous
+            </button>
+            <button className="btn btn-danger btn-full" style={{ marginTop: 10 }} onClick={openEmergency}>
+              <HeartPulse size={16} /> Numéros d’urgence (112)
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
+
+/* ------------------------------------------------------------------ */
+/* 12. Notifications                                                  */
+/* ------------------------------------------------------------------ */
 
 function PatientNotifications({ data, act }: ScreenProps) {
   const items = [...data.notifications].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  return <div><PageHeading eyebrow="MON ESPACE PATIENT" title="Notifications" subtitle="Vos rappels, confirmations et actualités de santé." action={items.some((item) => !item.isRead) && <button className="btn btn-outline" onClick={() => act("markAllNotifications").catch(() => {})}><Check size={17} />Tout marquer comme lu</button>} /><section className="card card-pad"><SectionHeading title="Toutes mes notifications" subtitle={`${items.filter((item) => !item.isRead).length} non lue(s)`} />{items.length ? items.map((item) => <button className={`notification-row ${!item.isRead ? "unread" : ""}`} key={item.id} onClick={() => { if (!item.isRead) act("markNotification", { id: item.id }).catch(() => {}); }}><div className={`list-icon ${item.category === "rendez-vous" ? "blue" : item.category === "traitement" ? "orange" : "mint"}`}>{item.category === "rendez-vous" ? <CalendarDays size={18} /> : item.category === "traitement" ? <Pill size={18} /> : <Bell size={18} />}</div><div><strong>{item.title}</strong><p>{item.message}</p><span>{shortDate(item.createdAt)} · {hour(item.createdAt)}</span></div>{!item.isRead && <i className="notification-dot" />}</button>) : <EmptyState icon={Bell} title="Tout est à jour" description="Vos prochaines notifications apparaîtront ici." />}</section></div>;
+
+  return (
+    <div>
+      <PageHeading
+        eyebrow="MON ESPACE PATIENT"
+        title="Notifications"
+        subtitle="Vos rappels, confirmations de rendez-vous et actualités de santé."
+        action={
+          items.some((item) => !item.isRead) && (
+            <button className="btn btn-outline" onClick={() => act("markAllNotifications").catch(() => {})}>
+              <Check size={17} /> Tout marquer comme lu
+            </button>
+          )
+        }
+      />
+      <section className="card card-pad">
+        <SectionHeading title="Toutes mes notifications" subtitle={`${items.filter((item) => !item.isRead).length} non lue(s)`} />
+        {items.length ? (
+          items.map((item) => (
+            <button
+              className={`notification-row ${!item.isRead ? "unread" : ""}`}
+              key={item.id}
+              onClick={() => {
+                if (!item.isRead) act("markNotification", { id: item.id }).catch(() => {});
+              }}
+            >
+              <div className={`list-icon ${item.category === "rendez-vous" ? "blue" : item.category === "securite" ? "orange" : "mint"}`}>
+                {item.category === "rendez-vous" ? <CalendarDays size={18} /> : item.category === "securite" ? <ShieldCheck size={18} /> : <Bell size={18} />}
+              </div>
+              <div>
+                <strong>{item.title}</strong>
+                <p>{item.message}</p>
+                <span>{shortDate(item.createdAt)} · {hour(item.createdAt)}</span>
+              </div>
+              {!item.isRead && <i className="notification-dot" />}
+            </button>
+          ))
+        ) : (
+          <EmptyState icon={Bell} title="Tout est à jour" description="Vos prochaines alertes et rappels s'afficheront ici." />
+        )}
+      </section>
+    </div>
+  );
 }
 
-function PatientSettings({ data, act, toast }: ScreenProps) {
-  const [profile, setProfile] = useState({ fullName: data.user.fullName, city: data.user.city || "", phone: data.user.phone || "" });
+/* ------------------------------------------------------------------ */
+/* 13. Paramètres & Sécurité                                          */
+/* ------------------------------------------------------------------ */
+
+function PatientSettings({ data, toast, go }: ScreenProps) {
+  const router = useRouter();
+  const [currentPw, setCurrentPw] = useState("");
+  const [newPw, setNewPw] = useState("");
+  const [confirmPw, setConfirmPw] = useState("");
+  const [pwVisible, setPwVisible] = useState(false);
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwError, setPwError] = useState("");
+  const [pwSuccess, setPwSuccess] = useState("");
+
   const [largeText, setLargeText] = useState(false);
   const [offline, setOffline] = useState(false);
-  const [saving, setSaving] = useState(false);
-  useEffect(() => { setLargeText(localStorage.getItem("sante_large_text") === "true"); setOffline(localStorage.getItem("sante_offline_enabled") === "true"); }, []);
-  const submit = async (event: FormEvent) => { event.preventDefault(); setSaving(true); try { await act("updateProfile", profile); } catch {} finally { setSaving(false); } };
-  const toggleLarge = () => { const next = !largeText; setLargeText(next); localStorage.setItem("sante_large_text", String(next)); document.documentElement.classList.toggle("large-text", next); toast(next ? "Grande police activée." : "Taille de police standard activée."); };
-  const toggleOffline = () => { const next = !offline; setOffline(next); localStorage.setItem("sante_offline_enabled", String(next)); localStorage.removeItem("sante_offline_snapshot"); if ("serviceWorker" in navigator) { if (next) navigator.serviceWorker.register("/sw.js").catch(() => {}); else navigator.serviceWorker.getRegistrations().then((items) => items.forEach((item) => item.unregister())); } toast(next ? "Mode hors ligne activé pour cet appareil." : "Mode hors ligne désactivé."); };
-  const speak = () => { if ("speechSynthesis" in window) { window.speechSynthesis.cancel(); const utterance = new SpeechSynthesisUtterance(`Bonjour ${firstName(data.user.fullName)}. Bienvenue dans votre espace SANTÉ plus. Votre identifiant patient est ${data.user.npi || "non renseigné"}.`); utterance.lang = "fr-FR"; utterance.rate = 0.9; window.speechSynthesis.speak(utterance); toast("Lecture vocale démarrée."); } else toast("La lecture vocale n'est pas disponible dans ce navigateur.", "error"); };
-  return <div><PageHeading eyebrow="MON COMPTE" title="Paramètres" subtitle="Gérez vos informations personnelles et personnalisez votre expérience." /><div className="settings-layout"><div className="card card-pad"><SectionHeading title="Informations personnelles" subtitle="Vos informations de profil SANTÉ+" /><form className="form-stack" onSubmit={submit}><div className="settings-avatar-row"><Avatar name={data.user.fullName} size={62} /><div><strong>{data.user.fullName}</strong><span>Patient · {data.user.npi}</span></div></div><div className="form-grid"><label className="field"><span>Nom complet</span><input value={profile.fullName} onChange={(event) => setProfile({ ...profile, fullName: event.target.value })} required /></label><label className="field"><span>Téléphone</span><input value={profile.phone} onChange={(event) => setProfile({ ...profile, phone: event.target.value })} required /></label></div><div className="form-grid"><label className="field"><span>Adresse email</span><input value={data.user.email} disabled /></label><label className="field"><span>Ville</span><input value={profile.city} onChange={(event) => setProfile({ ...profile, city: event.target.value })} /></label></div><div className="form-info"><ShieldCheck size={16} />Votre identifiant Santé+ interne ne remplace pas un NPI national officiel.</div><button className="btn btn-primary settings-save" disabled={saving}>{saving ? "Enregistrement..." : "Enregistrer les modifications"}</button></form></div><div className="settings-side"><div className="card card-pad"><SectionHeading title="Accessibilité" subtitle="Une interface adaptée à vos besoins" /><div className="setting-option"><div className="list-icon blue"><Volume2 size={19} /></div><div><strong>Lecture vocale</strong><span>Écouter un résumé de mon espace</span></div><button className="btn btn-outline btn-sm" onClick={speak}>Écouter</button></div><div className="setting-option"><div className="list-icon purple"><FileText size={19} /></div><div><strong>Grande police</strong><span>Améliorer la lisibilité du texte</span></div><button className={`toggle-switch ${largeText ? "on" : ""}`} onClick={toggleLarge} aria-label="Activer la grande police" aria-pressed={largeText}><i /></button></div></div><div className="card card-pad"><SectionHeading title="Accès hors ligne" subtitle="Restez informé même sans connexion" /><div className="setting-option"><div className="list-icon mint"><WifiOff size={19} /></div><div><strong>Mode hors ligne</strong><span>Conserver uniquement l’interface, sans données médicales</span></div><button className={`toggle-switch ${offline ? "on" : ""}`} onClick={toggleOffline} aria-label="Activer le mode hors ligne" aria-pressed={offline}><i /></button></div><p className="setting-note">Seule l’interface publique est disponible sans réseau. Aucune donnée médicale n’est conservée dans le navigateur pour des raisons de confidentialité.</p></div></div></div></div>;
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      setLargeText(localStorage.getItem("sante_large_text") === "true");
+      setOffline(localStorage.getItem("sante_offline_enabled") === "true");
+    });
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
+  const changePassword = async (event: FormEvent) => {
+    event.preventDefault();
+    setPwError("");
+    setPwSuccess("");
+    if (newPw !== confirmPw) {
+      setPwError("Les deux mots de passe ne correspondent pas.");
+      return;
+    }
+    const weakness = passwordProblem(newPw, { email: data.user.email, fullName: data.user.fullName });
+    if (weakness) {
+      setPwError(weakness);
+      return;
+    }
+    setPwSaving(true);
+    try {
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "changePassword",
+          currentPassword: currentPw,
+          newPassword: newPw,
+          confirmPassword: confirmPw,
+        }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(result.error || "Impossible de mettre à jour le mot de passe.");
+      setPwSuccess("Votre mot de passe a été modifié avec succès. Vos autres sessions ont été déconnectées.");
+      setCurrentPw("");
+      setNewPw("");
+      setConfirmPw("");
+      toast("Mot de passe mis à jour.");
+    } catch (err) {
+      setPwError(err instanceof Error ? err.message : "Erreur lors du changement de mot de passe.");
+    } finally {
+      setPwSaving(false);
+    }
+  };
+
+  const logoutAll = async () => {
+    if (!window.confirm("Êtes-vous sûr(e) de vouloir fermer toutes vos sessions sur tous vos appareils ?")) return;
+    try {
+      await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "logoutAll" }),
+      });
+      router.replace("/connexion"); router.refresh();
+    } catch {
+      toast("Erreur lors de la déconnexion.", "error");
+    }
+  };
+
+  const toggleLarge = () => {
+    const next = !largeText;
+    setLargeText(next);
+    localStorage.setItem("sante_large_text", String(next));
+    document.documentElement.classList.toggle("large-text", next);
+    toast(next ? "Grande police activée." : "Taille de police standard activée.");
+  };
+
+  const toggleOffline = () => {
+    const next = !offline;
+    setOffline(next);
+    localStorage.setItem("sante_offline_enabled", String(next));
+    if ("serviceWorker" in navigator) {
+      if (next) navigator.serviceWorker.register("/sw.js").catch(() => {});
+      else navigator.serviceWorker.getRegistrations().then((items) => items.forEach((item) => item.unregister()));
+    }
+    toast(next ? "Mode hors ligne activé pour cet appareil." : "Mode hors ligne désactivé.");
+  };
+
+  const speak = () => {
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(
+        `Bonjour ${firstName(data.user.fullName)}. Bienvenue dans votre espace SANTÉ plus. Votre identifiant patient est ${data.user.npi || "non renseigné"}.`
+      );
+      utterance.lang = "fr-FR";
+      utterance.rate = 0.9;
+      window.speechSynthesis.speak(utterance);
+      toast("Lecture vocale démarrée.");
+    } else {
+      toast("La lecture vocale n'est pas disponible dans ce navigateur.", "error");
+    }
+  };
+
+  return (
+    <div>
+      <PageHeading
+        eyebrow="MON COMPTE"
+        title="Paramètres & Sécurité"
+        subtitle="Gérez la sécurité de votre compte, votre mot de passe et vos préférences d'accessibilité."
+      />
+
+      <div className="settings-layout">
+        <div className="card card-pad security-card">
+          <SectionHeading
+            title="Sécurité du mot de passe"
+            subtitle="Changez votre mot de passe pour protéger votre dossier médical."
+          />
+          {pwError && <div className="form-error" role="alert">{pwError}</div>}
+          {pwSuccess && <div className="form-info" role="status"><CheckCircle2 size={16} />{pwSuccess}</div>}
+          <form className="form-stack" onSubmit={changePassword}>
+            <label className="field">
+              <span>Mot de passe actuel *</span>
+              <div className="input-icon">
+                <LockKeyhole size={16} />
+                <input
+                  type={pwVisible ? "text" : "password"}
+                  value={currentPw}
+                  onChange={(e) => setCurrentPw(e.target.value)}
+                  placeholder="Votre mot de passe actuel"
+                  autoComplete="current-password"
+                  required
+                />
+              </div>
+            </label>
+            <div className="form-grid">
+              <label className="field">
+                <span>Nouveau mot de passe *</span>
+                <div className="input-icon">
+                  <LockKeyhole size={16} />
+                  <input
+                    type={pwVisible ? "text" : "password"}
+                    value={newPw}
+                    onChange={(e) => setNewPw(e.target.value)}
+                    placeholder="12 caractères minimum"
+                    autoComplete="new-password"
+                    minLength={12}
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="input-trailing"
+                    onClick={() => setPwVisible(!pwVisible)}
+                    aria-label={pwVisible ? "Masquer" : "Afficher"}
+                  >
+                    {pwVisible ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </label>
+              <label className="field">
+                <span>Confirmer le mot de passe *</span>
+                <div className="input-icon">
+                  <ShieldCheck size={16} />
+                  <input
+                    type={pwVisible ? "text" : "password"}
+                    value={confirmPw}
+                    onChange={(e) => setConfirmPw(e.target.value)}
+                    placeholder="Répétez"
+                    autoComplete="new-password"
+                    minLength={12}
+                    required
+                  />
+                </div>
+              </label>
+            </div>
+            <p className="form-help">
+              Le mot de passe doit comporter au moins 12 caractères et mélanger lettres et chiffres.
+            </p>
+            <button className="btn btn-primary" disabled={pwSaving || !currentPw || !newPw}>
+              {pwSaving ? "Mise à jour en cours..." : "Mettre à jour le mot de passe"}
+            </button>
+          </form>
+
+          <div className="sessions-box">
+            <SectionHeading
+              title="Gestion des sessions"
+              subtitle="Contrôlez les accès connectés à votre compte patient."
+            />
+            <div className="session-current-row">
+              <div>
+                <strong>Session courante</strong>
+                <p className="muted-small">Connecté sur cet appareil · Cookie chiffré HTTP-Only</p>
+              </div>
+              <span className="status-badge status-positive"><i></i> Actif</span>
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-outline" onClick={logoutAll}>
+                <LogOut size={16} /> Déconnecter tous les appareils
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="settings-side">
+          <div className="card card-pad">
+            <SectionHeading
+              title="Accessibilité"
+              subtitle="Une interface adaptée à vos besoins"
+            />
+            <div className="setting-option">
+              <div className="list-icon blue"><Volume2 size={19} /></div>
+              <div>
+                <strong>Lecture vocale</strong>
+                <span>Écouter un résumé de mon espace</span>
+              </div>
+              <button className="btn btn-outline btn-sm" onClick={speak}>Écouter</button>
+            </div>
+            <div className="setting-option">
+              <div className="list-icon purple"><FileText size={19} /></div>
+              <div>
+                <strong>Grande police</strong>
+                <span>Améliorer la lisibilité du texte</span>
+              </div>
+              <button
+                className={`toggle-switch ${largeText ? "on" : ""}`}
+                onClick={toggleLarge}
+                aria-label="Activer la grande police"
+                aria-pressed={largeText}
+              ><i /></button>
+            </div>
+          </div>
+
+          <div className="card card-pad">
+            <SectionHeading
+              title="Accès hors ligne"
+              subtitle="Restez informé même sans connexion"
+            />
+            <div className="setting-option">
+              <div className="list-icon mint"><WifiOff size={19} /></div>
+              <div>
+                <strong>Mode hors ligne</strong>
+                <span>Conserver uniquement l’interface, sans données médicales</span>
+              </div>
+              <button
+                className={`toggle-switch ${offline ? "on" : ""}`}
+                onClick={toggleOffline}
+                aria-label="Activer le mode hors ligne"
+                aria-pressed={offline}
+              ><i /></button>
+            </div>
+            <p className="setting-note">
+              Seule l’interface publique est disponible sans réseau. Aucune donnée médicale n’est conservée dans le navigateur pour des raisons de confidentialité.
+            </p>
+          </div>
+
+          <div className="card card-pad">
+            <SectionHeading
+              title="Confidentialité & Droits"
+              subtitle="Contrôlez vos données de santé"
+            />
+            <p className="setting-note">
+              Vous disposez d’un droit d’accès, de rectification, d’effacement et de portabilité conformément à la loi 2017-20.
+            </p>
+            <button className="btn btn-soft btn-full" onClick={() => go("privacy")}>
+              <ShieldCheck size={16} /> Ouvrir le centre de confidentialité
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }

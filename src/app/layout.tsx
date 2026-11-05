@@ -10,5 +10,9 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
-  return <html lang="fr"><body>{children}</body></html>;
+  return (
+    <html lang="fr" data-scroll-behavior="smooth" suppressHydrationWarning>
+      <body suppressHydrationWarning>{children}</body>
+    </html>
+  );
 }

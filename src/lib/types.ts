@@ -1,6 +1,6 @@
 export type Role = "patient" | "doctor" | "hospital" | "admin";
 
-export type UserView = { id: number; fullName: string; email: string; phone: string | null; role: string; npi: string | null; bloodGroup: string | null; birthDate: string | null; city: string | null; hospitalId: number | null; isDemo: boolean; isActive: boolean; createdAt: string };
+export type UserView = { id: number; fullName: string; email: string; phone: string | null; role: string; npi: string | null; bloodGroup: string | null; birthDate: string | null; city: string | null; hospitalId: number | null; isActive: boolean; mustChangePassword: boolean; twoFactorEnrolledAt: string | null; createdAt: string };
 export type Hospital = { id: number; name: string; shortName: string; city: string; address: string; phone: string; type: string; latitude: number; longitude: number; bedsTotal: number; bedsOccupied: number; isActive: boolean };
 export type Pharmacy = { id: number; name: string; city: string; address: string; phone: string; latitude: number; longitude: number; hours: string };
 export type DoctorView = { id: number; userId: number; hospitalId: number; specialty: string; licenseNumber: string; status: string; yearsExperience: number; name: string; email: string; phone: string | null; hospitalName: string };
@@ -13,7 +13,7 @@ export type Notice = { id: number; userId: number; title: string; message: strin
 export type Donation = { id: number; patientId: number; hospitalId: number | null; status: string; donatedAt: string };
 export type StockItem = { id: number; hospitalId: number; name: string; category: string; quantity: number; minQuantity: number; unit: string; price: number; expiryDate: string | null };
 export type HospitalService = { id: number; hospitalId: number; name: string; bedsTotal: number; bedsOccupied: number; equipment: string };
-export type AccessRequest = { id: number; applicantName: string; email: string; phone: string | null; role: string; organization: string | null; specialty: string | null; status: string; createdAt: string; reviewedAt: string | null };
+export type AccessRequest = { id: number; applicantName: string; email: string; phone: string | null; role: string; organization: string | null; specialty: string | null; licenseNumber: string | null; status: string; createdAt: string; reviewedAt: string | null };
 export type AuditLog = { id: number; userId: number | null; action: string; resource: string; details: string | null; createdAt: string };
 export type PurchaseOrder = { id: number; hospitalId: number; supplier: string; itemName: string; quantity: number; totalCost: number; status: string; createdAt: string };
 export type BloodStock = { id: number; hospitalId: number; bloodGroup: string; units: number; minUnits: number; updatedAt: string };
@@ -23,6 +23,7 @@ export type CareConsent = { id: number; patientId: number; doctorId: number | nu
 export type PrivacyRequest = { id: number; patientId: number; type: string; message: string; status: string; createdAt: string; reviewedAt: string | null };
 
 export type BootstrapData = {
+  serverTime: string;
   user: UserView;
   hospitals: Hospital[];
   pharmacies: Pharmacy[];

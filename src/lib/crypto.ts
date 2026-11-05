@@ -15,7 +15,6 @@ export function encryptValue(value: string) {
 
 export function decryptValue(value: string) {
   if (!value.startsWith("enc:v1:")) {
-    if (process.env.ENABLE_DEMO_MODE === "true") return value; // Only for migrating old synthetic demo records.
     throw new Error("Unencrypted sensitive value refused");
   }
   const [, , iv, tag, ciphertext] = value.split(":");

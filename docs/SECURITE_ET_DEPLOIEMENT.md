@@ -1,39 +1,60 @@
-# SANTÉ+ — sécurité et critères de mise en service
+# Sécurité et déploiement — SANTÉ+
 
-## Statut actuel
+## État livré
 
-**Pilote fonctionnel avec données fictives, pas un système national homologué.** Les espaces patient, médecin, établissement et administration partagent une base PostgreSQL. Les parcours de rendez-vous, consultation/ordonnance, documents, stocks, finances de démonstration et droits des patients sont reliés. L'activation `ENABLE_DEMO_MODE=true` est réservée à ce sandbox. **Ne jamais saisir de données réelles dans ce pilote.**
+- Aucun mode démonstration, aucun compte de démonstration, aucune donnée fictive.
+- Base vide à l’exception d’un unique administrateur et des paramètres techniques.
+- Migrations SQL versionnées (`drizzle/`) ; pas de `push` automatique en production.
+- Amorçage administrateur idempotent et bloqué si la base contient déjà des données.
+- Changement de mot de passe obligatoire à la première connexion.
+- 2FA TOTP obligatoire pour les rôles médecin, hôpital et administrateur.
+- Inscription patient ouverte depuis la page dédiée `/inscription` (5 tentatives/heure/IP), désactivable par le paramètre `registrations_open`. Le rôle est forcé côté serveur à `patient`. Les rôles médecin et établissement restent sous validation administrative stricte.
+- Protection des routes côté serveur : `/espace` exige une session active et redirige immédiatement les visiteurs non authentifiés vers `/connexion`.
+- Réinitialisation de mot de passe sécurisée : table `password_resets`, code aléatoire à usage unique valable 30 minutes, haché en base (SHA-256), révoquant toutes les sessions actives lors de sa consommation.
+- Robustesse des mots de passe : ≥12 caractères, contrôle de complexité (lettres et chiffres), vérification anti-dictionnaire et rejet des mots de passe contenant le nom ou l'adresse email de l'utilisateur.
+- Paiements en ligne désactivés ; encaissements réels enregistrés par l’établissement avec référence et audit.
 
-## Mesures intégrées et vérifiables
+## Secrets et configuration
 
-- Connexion par mot de passe haché bcrypt, sessions opaques aléatoires révocables en base, cookie HttpOnly/Secure/SameSite Strict. Durée : 12 h pour rôles sensibles, 7 jours pour patient.
-- TOTP obligatoire pour médecin, hôpital et administration. Secrets TOTP et fichiers médicaux chiffrés en AES-256-GCM avec `DATA_ENCRYPTION_KEY`. Pas de clé dans le code.
-- Contrôle d'origine, en-têtes CSP/HSTS/anti-cadrage/no-referrer, limitation des tentatives partagée en PostgreSQL.
-- Un NPI ou QR **identifie, mais n'autorise pas l'accès**. Autorisations de soins explicites, expirables et révocables ; contrôle serveur sur lecture, export, upload et consultation. L'administration ne reçoit pas les dossiers cliniques.
-- Journal d'audit des actions sensibles, exports et accès ; pas de symptômes conservés dans le journal.
-- Compte SQL applicatif distinct du superutilisateur, sans permissions DDL ; TLS requis pour les bases distantes.
-- Aucune donnée médicale persistée dans le stockage du navigateur pour l'accès hors ligne. L'assistant local ne transmet rien ; l'IA externe n'est appelée que si une clé serveur existe et si l'utilisateur accepte explicitement.
+Ne jamais committer `.env.local`, mots de passe, clés ou journaux d’amorçage.
 
-## Blocages avant données réelles / déploiement national
+- `SESSION_SECRET` : ≥ 48 caractères, unique par environnement.
+- `DATA_ENCRYPTION_KEY` : 64 hexadécimaux (AES-256-GCM). Une perte de clé rend les données chiffrées illisibles ; une rotation doit être planifiée.
+- `DATABASE_URL` : rôle applicatif à privilèges minimaux.
+- `MIGRATION_DATABASE_URL` : rôle de migration, séparé du rôle applicatif.
 
-1. **Cadre juridique béninois** : désigner formellement le responsable du traitement, le DPO/point de contact, les responsables hospitaliers ; consulter l'APDP et accomplir les formalités applicables à la loi n° 2017-20. Valider la politique de confidentialité, les bases légales, les durées de conservation et les contrats des sous-traitants. La page actuelle est un brouillon de transparence, **pas une certification**.
-2. **Identité nationale** : le champ `npi` de ce pilote est un identifiant interne fictif. Il ne faut pas le présenter comme un NPI officiel. Intégrer un mécanisme autorisé de vérification d'identité/ANIP et traiter homonymies, doublons, mineurs et représentants légaux avant production.
-3. **Onboarding vérifié** : confirmer email/téléphone par canal sécurisé, vérifier les licences ONMB et l'habilitation des établissements par contrôle humain documenté. Les comptes créés par validation doivent recevoir leurs identifiants par un canal secret et forcer leur rotation au premier accès. Prévoir récupération 2FA, rotation des mots de passe et détection d'abus.
-4. **Paiement** : MTN/MOOV est **simulé uniquement pour les comptes fictifs**. Pour les comptes réels, le serveur refuse le paiement. Intégrer un prestataire agréé avec contrats, webhooks signés, idempotence, rapprochement et remboursements avant d'encaisser.
-5. **Infrastructure** : hébergement agréé pour données de santé, chiffrement des disques et sauvegardes, clés dans un KMS/HSM (rotation et contrôle d'accès), TLS bout-en-bout, isolation réseau, sauvegardes restaurées périodiquement, PRA/PCA, antivirus sur les fichiers, supervision et alerting. Remplacer la base locale et les secrets `.env` du sandbox.
-6. **Sécurité applicative** : audit de code indépendant, tests d'intrusion, tests de charge nationaux, revue clinique de l'assistant, revue des dépendances, durcissement CSP avec nonces, sessions multi-appareils, politique de conservation des journaux et procédure de réponse aux incidents. Ajouter RLS PostgreSQL et séparation des responsabilités par établissement.
-7. **Montée en charge** : les listes sont plafonnées pour ce pilote ; implémenter pagination serveur, statistiques agrégées exactes, index adaptés, traitement asynchrone des notifications, transactions atomiques pour les parcours multi-écritures et réplication/observabilité avant usage national.
-8. **Interopérabilité** : définir un modèle de données clinique validé, codifications médicales, gestion de provenance, signatures des ordonnances, parcours pharmacie, intégrations HIS/LIS/PACS/FHIR et workflows d'urgence vérifiés avec les structures partenaires.
-9. **Hors ligne** : le pilote ne conserve pas les dossiers sur l'appareil. Une vraie consultation hors ligne exige une conception chiffrée, une politique de terminal fiable et une analyse d'impact spécifique.
+En production : gestionnaire de secrets, TLS PostgreSQL, chiffrement au repos, sauvegardes chiffrées et restauration testée.
 
-## Variables requises
+## Base de données
 
-- `DATABASE_URL` : compte applicatif à permissions limitées ; TLS requis hors localhost.
-- `SESSION_SECRET` : secret aléatoire >= 48 caractères, stable et partagé entre instances.
-- `DATA_ENCRYPTION_KEY` : 32 octets hexadécimaux, à conserver en KMS ; rotation planifiée.
-- `ENABLE_DEMO_MODE` : `true` **uniquement** avec base isolée et données fictives ; `false` en production.
-- `OPENAI_API_KEY` / `OPENAI_MODEL` facultatifs : la transmission n'a lieu qu'après accord explicite ; contrat de sous-traitance nécessaire avant activation réelle.
+- Appliquer les migrations avec un rôle dédié : `npm run db:migrate`.
+- Ne pas utiliser `drizzle-kit push` sur une base réelle.
+- Le rôle applicatif ne doit pas pouvoir créer/altérer des schémas ni supprimer les journaux d’audit et les données médicales protégées.
+- Superviser connexions, locks, croissance, sauvegardes et échecs d’authentification.
 
-## Tests de fumée
+## Comptes et habilitations
 
-Après lancement du serveur, exécuter `node scripts/security-smoke.mjs`. Il vérifie le refus anonyme, l'absence de bascule directe admin, le TOTP, l'isolation des dossiers et les en-têtes de sécurité. Les tests de charge et de conformité restent à réaliser.
+- Les patients s’inscrivent eux-mêmes ; vérifier la modération des inscriptions en cas d’abus.
+- Créer les établissements avant les comptes qui leur sont rattachés.
+- Remettre les mots de passe temporaires par un canal sûr, une seule fois.
+- Vérifier l’identité et les habilitations des professionnels avant activation.
+- Révoquer sessions et accès lors d’un départ ou d’une suspicion de compromission.
+- Les demandes d’accès médecin ne doivent être approuvées qu’après vérification humaine.
+
+## Données de santé
+
+- Consentement de soins révocable, accès professionnels tracés.
+- Documents médicaux chiffrés côté applicatif ; ne pas les servir sans contrôle d’accès.
+- Export et demandes de confidentialité soumis à vérification d’identité.
+- Définir une politique de conservation et de suppression conforme au cadre légal.
+
+## Avant toute mise en production réelle
+
+1. Validation APDP et conformité loi 2017-20.
+2. Vérification d’identité (ANIP ou équivalent) et des ordres professionnels.
+3. Intégration d’un prestataire de paiement réel et réconciliation.
+4. Audit de sécurité indépendant, tests d’intrusion et revue des dépendances.
+5. Sauvegardes, PRA/PCA, supervision et astreinte.
+6. Tests de charge, accessibilité et parcours utilisateurs réels.
+
+Tant que ces étapes ne sont pas validées, l’application ne doit pas recevoir de données de santé réelles.

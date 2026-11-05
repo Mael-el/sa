@@ -1,4 +1,5 @@
-import { boolean, doublePrecision, index, integer, jsonb, pgTable, serial, text, timestamp, varchar } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { boolean, check, doublePrecision, index, integer, jsonb, pgTable, serial, text, timestamp, varchar } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -11,13 +12,23 @@ export const users = pgTable("users", {
   bloodGroup: varchar("blood_group", { length: 8 }),
   birthDate: varchar("birth_date", { length: 20 }),
   city: varchar("city", { length: 100 }).default("Cotonou"),
-  hospitalId: integer("hospital_id"),
+  hospitalId: integer("hospital_id").references(() => hospitals.id),
   isActive: boolean("is_active").notNull().default(true),
-  isDemo: boolean("is_demo").notNull().default(false),
+  mustChangePassword: boolean("must_change_password").notNull().default(true),
   privacyAcceptedAt: timestamp("privacy_accepted_at"),
   twoFactorSecret: text("two_factor_secret"),
+  twoFactorEnrolledAt: timestamp("two_factor_enrolled_at"),
+  lastTotpCounter: integer("last_totp_counter"),
+  passwordChangedAt: timestamp("password_changed_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => [
+  index("user_role_idx").on(table.role),
+  index("user_hospital_idx").on(table.hospitalId),
+  check("users_role_check", sql`${table.role} in ('patient', 'doctor', 'hospital', 'admin')`),
+  check("users_email_lowercase_check", sql`${table.email} = lower(${table.email})`),
+  check("users_blood_group_check", sql`${table.bloodGroup} is null or ${table.bloodGroup} in ('O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-')`),
+  check("users_professional_hospital_check", sql`${table.role} not in ('doctor', 'hospital') or ${table.hospitalId} is not null`),
+]);
 
 export const hospitals = pgTable("hospitals", {
   id: serial("id").primaryKey(),
@@ -32,17 +43,24 @@ export const hospitals = pgTable("hospitals", {
   bedsTotal: integer("beds_total").notNull().default(0),
   bedsOccupied: integer("beds_occupied").notNull().default(0),
   isActive: boolean("is_active").notNull().default(true),
-});
+}, (table) => [
+  check("hospitals_beds_check", sql`${table.bedsTotal} >= 0 and ${table.bedsOccupied} >= 0 and ${table.bedsOccupied} <= ${table.bedsTotal}`),
+  check("hospitals_coordinates_check", sql`${table.latitude} between -90 and 90 and ${table.longitude} between -180 and 180`),
+]);
 
 export const doctors = pgTable("doctors", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id),
+  userId: integer("user_id").notNull().unique().references(() => users.id),
   hospitalId: integer("hospital_id").notNull().references(() => hospitals.id),
   specialty: varchar("specialty", { length: 120 }).notNull(),
-  licenseNumber: varchar("license_number", { length: 60 }).notNull(),
+  licenseNumber: varchar("license_number", { length: 60 }).notNull().unique(),
   status: varchar("status", { length: 20 }).notNull().default("actif"),
   yearsExperience: integer("years_experience").notNull().default(0),
-});
+}, (table) => [
+  index("doctor_hospital_idx").on(table.hospitalId),
+  check("doctors_status_check", sql`${table.status} in ('actif', 'suspendu', 'inactif')`),
+  check("doctors_experience_check", sql`${table.yearsExperience} >= 0`),
+]);
 
 export const appointments = pgTable("appointments", {
   id: serial("id").primaryKey(),
@@ -54,7 +72,12 @@ export const appointments = pgTable("appointments", {
   type: varchar("type", { length: 60 }).notNull().default("Consultation"),
   status: varchar("status", { length: 30 }).notNull().default("confirmé"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-}, (table) => [index("appointment_patient_date_idx").on(table.patientId, table.scheduledAt), index("appointment_doctor_date_idx").on(table.doctorId, table.scheduledAt), index("appointment_hospital_idx").on(table.hospitalId)]);
+}, (table) => [
+  index("appointment_patient_date_idx").on(table.patientId, table.scheduledAt),
+  index("appointment_doctor_date_idx").on(table.doctorId, table.scheduledAt),
+  index("appointment_hospital_idx").on(table.hospitalId),
+  check("appointments_status_check", sql`${table.status} in ('confirmé', 'terminé', 'annulé')`),
+]);
 
 export const medicalRecords = pgTable("medical_records", {
   id: serial("id").primaryKey(),
@@ -92,7 +115,13 @@ export const payments = pgTable("payments", {
   status: varchar("status", { length: 30 }).notNull().default("en attente"),
   reference: varchar("reference", { length: 80 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-}, (table) => [index("payment_patient_idx").on(table.patientId), index("payment_hospital_idx").on(table.hospitalId)]);
+}, (table) => [
+  index("payment_patient_idx").on(table.patientId),
+  index("payment_hospital_idx").on(table.hospitalId),
+  index("payment_appointment_idx").on(table.appointmentId),
+  check("payments_amount_check", sql`${table.amount} > 0`),
+  check("payments_status_check", sql`${table.status} in ('en attente', 'payé', 'annulé', 'remboursé')`),
+]);
 
 export const notifications = pgTable("notifications", {
   id: serial("id").primaryKey(),
@@ -110,7 +139,7 @@ export const bloodDonations = pgTable("blood_donations", {
   hospitalId: integer("hospital_id").references(() => hospitals.id),
   status: varchar("status", { length: 30 }).notNull().default("planifié"),
   donatedAt: timestamp("donated_at").notNull().defaultNow(),
-});
+}, (table) => [check("blood_donations_status_check", sql`${table.status} in ('planifié', 'effectué', 'annulé')`)]);
 
 export const stockItems = pgTable("stock_items", {
   id: serial("id").primaryKey(),
@@ -122,7 +151,10 @@ export const stockItems = pgTable("stock_items", {
   unit: varchar("unit", { length: 30 }).notNull().default("unités"),
   price: integer("price").notNull().default(0),
   expiryDate: timestamp("expiry_date"),
-});
+}, (table) => [
+  index("stock_hospital_idx").on(table.hospitalId),
+  check("stock_quantities_check", sql`${table.quantity} >= 0 and ${table.minQuantity} >= 0 and ${table.price} >= 0`),
+]);
 
 export const hospitalServices = pgTable("hospital_services", {
   id: serial("id").primaryKey(),
@@ -131,7 +163,7 @@ export const hospitalServices = pgTable("hospital_services", {
   bedsTotal: integer("beds_total").notNull().default(0),
   bedsOccupied: integer("beds_occupied").notNull().default(0),
   equipment: text("equipment").notNull().default(""),
-});
+}, (table) => [check("hospital_services_beds_check", sql`${table.bedsTotal} >= 0 and ${table.bedsOccupied} >= 0 and ${table.bedsOccupied} <= ${table.bedsTotal}`)]);
 
 export const accessRequests = pgTable("access_requests", {
   id: serial("id").primaryKey(),
@@ -141,10 +173,15 @@ export const accessRequests = pgTable("access_requests", {
   role: varchar("role", { length: 20 }).notNull(),
   organization: varchar("organization", { length: 180 }),
   specialty: varchar("specialty", { length: 120 }),
+  licenseNumber: varchar("license_number", { length: 60 }),
   status: varchar("status", { length: 20 }).notNull().default("en attente"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   reviewedAt: timestamp("reviewed_at"),
-});
+}, (table) => [
+  index("access_request_status_idx").on(table.status),
+  check("access_requests_role_check", sql`${table.role} in ('doctor', 'hospital')`),
+  check("access_requests_status_check", sql`${table.status} in ('en attente', 'approuvé', 'refusé')`),
+]);
 
 export const auditLogs = pgTable("audit_logs", {
   id: serial("id").primaryKey(),
@@ -164,7 +201,7 @@ export const pharmacies = pgTable("pharmacies", {
   latitude: doublePrecision("latitude").notNull(),
   longitude: doublePrecision("longitude").notNull(),
   hours: varchar("hours", { length: 100 }).notNull().default("08:00 – 20:00"),
-});
+}, (table) => [check("pharmacies_coordinates_check", sql`${table.latitude} between -90 and 90 and ${table.longitude} between -180 and 180`)]);
 
 export const purchaseOrders = pgTable("purchase_orders", {
   id: serial("id").primaryKey(),
@@ -175,7 +212,10 @@ export const purchaseOrders = pgTable("purchase_orders", {
   totalCost: integer("total_cost").notNull().default(0),
   status: varchar("status", { length: 30 }).notNull().default("commandé"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => [
+  check("purchase_orders_quantity_check", sql`${table.quantity} > 0 and ${table.totalCost} >= 0`),
+  check("purchase_orders_status_check", sql`${table.status} in ('commandé', 'en livraison', 'reçu', 'annulé')`),
+]);
 
 export const bloodStocks = pgTable("blood_stocks", {
   id: serial("id").primaryKey(),
@@ -184,7 +224,10 @@ export const bloodStocks = pgTable("blood_stocks", {
   units: integer("units").notNull().default(0),
   minUnits: integer("min_units").notNull().default(10),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => [
+  check("blood_stocks_group_check", sql`${table.bloodGroup} in ('O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-')`),
+  check("blood_stocks_units_check", sql`${table.units} >= 0 and ${table.minUnits} >= 0`),
+]);
 
 export const medicalDocuments = pgTable("medical_documents", {
   id: serial("id").primaryKey(),
@@ -196,7 +239,7 @@ export const medicalDocuments = pgTable("medical_documents", {
   mimeType: varchar("mime_type", { length: 100 }).notNull(),
   data: text("data").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => [index("medical_document_patient_idx").on(table.patientId)]);
 
 export const platformSettings = pgTable("platform_settings", {
   key: varchar("key", { length: 80 }).primaryKey(),
@@ -212,7 +255,10 @@ export const sessions = pgTable("sessions", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   expiresAt: timestamp("expires_at").notNull(),
   revokedAt: timestamp("revoked_at"),
-});
+}, (table) => [
+  index("session_user_idx").on(table.userId),
+  check("sessions_expiry_check", sql`${table.expiresAt} > ${table.createdAt}`),
+]);
 
 export const careConsents = pgTable("care_consents", {
   id: serial("id").primaryKey(),
@@ -224,13 +270,18 @@ export const careConsents = pgTable("care_consents", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   expiresAt: timestamp("expires_at").notNull(),
   revokedAt: timestamp("revoked_at"),
-}, (table) => [index("consent_patient_idx").on(table.patientId), index("consent_doctor_expiry_idx").on(table.doctorId, table.expiresAt), index("consent_hospital_expiry_idx").on(table.hospitalId, table.expiresAt)]);
+}, (table) => [
+  index("consent_patient_idx").on(table.patientId),
+  index("consent_doctor_expiry_idx").on(table.doctorId, table.expiresAt),
+  index("consent_hospital_expiry_idx").on(table.hospitalId, table.expiresAt),
+  check("care_consents_expiry_check", sql`${table.expiresAt} > ${table.createdAt}`),
+]);
 
 export const rateLimits = pgTable("rate_limits", {
   key: varchar("key", { length: 64 }).primaryKey(),
   hits: integer("hits").notNull().default(0),
   resetAt: timestamp("reset_at").notNull(),
-});
+}, (table) => [check("rate_limits_hits_check", sql`${table.hits} >= 0`)]);
 
 export const privacyRequests = pgTable("privacy_requests", {
   id: serial("id").primaryKey(),
@@ -240,4 +291,19 @@ export const privacyRequests = pgTable("privacy_requests", {
   status: varchar("status", { length: 30 }).notNull().default("en attente"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   reviewedAt: timestamp("reviewed_at"),
-}, (table) => [index("privacy_request_patient_idx").on(table.patientId)]);
+}, (table) => [
+  index("privacy_request_patient_idx").on(table.patientId),
+  index("privacy_request_status_idx").on(table.status),
+  check("privacy_requests_type_check", sql`${table.type} in ('accès', 'rectification', 'effacement', 'opposition')`),
+  check("privacy_requests_status_check", sql`${table.status} in ('en attente', 'en cours', 'traité', 'refusé')`),
+]);
+
+export const passwordResets = pgTable("password_resets", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: varchar("token_hash", { length: 64 }).notNull().unique(),
+  requestedVia: varchar("requested_via", { length: 40 }).notNull().default("auto"),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => [index("password_reset_user_idx").on(table.userId, table.createdAt)]);

@@ -41,3 +41,5 @@ export async function hasCareConsent(current: typeof users.$inferSelect, patient
   const [grant] = await db.select({ id: careConsents.id }).from(careConsents).where(and(...conditions)).limit(1);
   return Boolean(grant);
 }
+
+export { passwordProblem } from "./passwords";
