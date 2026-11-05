@@ -1,6 +1,6 @@
-import { and, desc, eq, gt, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { accessRequests, appointments, auditLogs, bloodDonations, bloodStocks, careConsents, doctors, hospitalServices, hospitals, medicalDocuments, medicalRecords, notifications, payments, pharmacies, platformSettings, prescriptions, privacyRequests, purchaseOrders, stockItems, users } from "@/db/schema";
+import { accessRequests, appointments, auditLogs, bloodDonations, bloodStocks, careConsents, doctors, healthFacilityListings, hospitalServices, hospitals, medicalDocuments, medicalRecords, notifications, payments, pharmacies, platformSettings, prescriptions, privacyRequests, purchaseOrders, stockItems, users } from "@/db/schema";
 import { getSessionUser, publicUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -14,9 +14,27 @@ export async function GET() {
     const grantWhere = role === "patient" ? eq(careConsents.patientId, current.id) : role === "doctor" ? eq(careConsents.doctorId, ownDoctor?.id || -1) : role === "hospital" ? eq(careConsents.hospitalId, ownHospitalId) : undefined;
     const grants = grantWhere ? await db.select().from(careConsents).where(grantWhere).orderBy(desc(careConsents.createdAt)).limit(300) : [];
     const grantedIds = [...new Set(grants.filter((item) => !item.revokedAt && item.expiresAt > new Date()).map((item) => item.patientId))];
-    const [allHospitals, allPharmacies, allDoctorsJoined, allAppointments, allUsers, allRecords, allPrescriptions, allPayments, allNotifications, allDonations, allStocks, allServices, allRequests, allAudit, allOrders, allBloodStocks, allDocuments, allSettings, allPrivacyRequests] = await Promise.all([
+    const [allHospitals, allPharmacies, allHealthFacilities, allDoctorsJoined, allAppointments, allUsers, allRecords, allPrescriptions, allPayments, allNotifications, allDonations, allStocks, allServices, allRequests, allAudit, allOrders, allBloodStocks, allDocuments, allSettings, allPrivacyRequests] = await Promise.all([
       db.select().from(hospitals).limit(1000),
       db.select().from(pharmacies).limit(1000),
+      db.select({
+        id: healthFacilityListings.id,
+        sourceId: healthFacilityListings.sourceId,
+        name: healthFacilityListings.name,
+        kind: healthFacilityListings.kind,
+        category: healthFacilityListings.category,
+        city: healthFacilityListings.city,
+        locality: healthFacilityListings.locality,
+        address: healthFacilityListings.address,
+        phone: healthFacilityListings.phone,
+        openingHours: healthFacilityListings.openingHours,
+        latitude: healthFacilityListings.latitude,
+        longitude: healthFacilityListings.longitude,
+        sourceName: healthFacilityListings.sourceName,
+        sourceUrl: healthFacilityListings.sourceUrl,
+        sourceLicense: healthFacilityListings.sourceLicense,
+        sourceSnapshotDate: healthFacilityListings.sourceSnapshotDate,
+      }).from(healthFacilityListings).orderBy(asc(healthFacilityListings.locality), asc(healthFacilityListings.name)).limit(5000),
       db.select({ doctor: doctors, doctorUser: users }).from(doctors).innerJoin(users, eq(doctors.userId, users.id)).limit(1000),
       role === "patient" ? db.select().from(appointments).where(eq(appointments.patientId, current.id)).orderBy(desc(appointments.scheduledAt)).limit(200) : role === "doctor" ? db.select().from(appointments).where(eq(appointments.doctorId, ownDoctor?.id || -1)).orderBy(desc(appointments.scheduledAt)).limit(200) : role === "hospital" ? db.select().from(appointments).where(eq(appointments.hospitalId, ownHospitalId)).orderBy(desc(appointments.scheduledAt)).limit(300) : db.select().from(appointments).orderBy(desc(appointments.scheduledAt)).limit(500),
       role === "patient" ? db.select().from(users).where(eq(users.id, current.id)) : role === "admin" ? db.select().from(users).orderBy(desc(users.createdAt)).limit(500) : grantedIds.length ? db.select().from(users).where(and(eq(users.role, "patient"), inArray(users.id, grantedIds))).limit(300) : Promise.resolve([]),
@@ -37,6 +55,6 @@ export async function GET() {
     ]);
     const doctorViews = allDoctorsJoined.filter(({ doctor }) => role !== "hospital" || doctor.hospitalId === ownHospitalId).map(({ doctor, doctorUser }) => ({ ...doctor, name: doctorUser.fullName, email: doctorUser.email, phone: doctorUser.phone, hospitalName: allHospitals.find((hospital) => hospital.id === doctor.hospitalId)?.shortName || "" }));
     const visibleUsers = allUsers.map((user) => role === "admin" ? { ...publicUser(user), bloodGroup: null, birthDate: null } : publicUser(user));
-    return Response.json({ serverTime: new Date().toISOString(), user: publicUser(current), hospitals: allHospitals, pharmacies: allPharmacies, doctors: doctorViews, users: visibleUsers, appointments: allAppointments, records: allRecords, prescriptions: allPrescriptions, payments: allPayments, notifications: allNotifications, donations: allDonations, stocks: allStocks, services: allServices, requests: allRequests, audit: allAudit, orders: allOrders, bloodStocks: allBloodStocks, documents: allDocuments, settings: allSettings, consents: role === "patient" ? grants : [], privacyRequests: allPrivacyRequests }, { headers: { "Cache-Control": "private, no-store" } });
+    return Response.json({ serverTime: new Date().toISOString(), user: publicUser(current), hospitals: allHospitals, pharmacies: allPharmacies, healthFacilities: allHealthFacilities, doctors: doctorViews, users: visibleUsers, appointments: allAppointments, records: allRecords, prescriptions: allPrescriptions, payments: allPayments, notifications: allNotifications, donations: allDonations, stocks: allStocks, services: allServices, requests: allRequests, audit: allAudit, orders: allOrders, bloodStocks: allBloodStocks, documents: allDocuments, settings: allSettings, consents: role === "patient" ? grants : [], privacyRequests: allPrivacyRequests }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) { console.error("Bootstrap error", error); return Response.json({ error: "Impossible de charger les données." }, { status: 500 }); }
 }

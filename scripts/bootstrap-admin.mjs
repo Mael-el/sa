@@ -55,7 +55,7 @@ try {
   console.log(`Email : ${email}`);
   if (generated) console.log(`Mot de passe temporaire : ${password}`);
   else console.log("Mot de passe temporaire : celui fourni via ADMIN_INITIAL_PASSWORD");
-  console.log("À la première connexion : configurez la double authentification, puis remplacez ce mot de passe.\n");
+  console.log("À la première connexion : remplacez ce mot de passe temporaire.\n");
 } catch (error) {
   await client.query("ROLLBACK").catch(() => {});
   throw error;

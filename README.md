@@ -2,7 +2,7 @@
 
 Application de coordination des soins : patients, médecins, établissements et administration.
 
-**Aucun mode démonstration, aucun compte de démonstration et aucune donnée fictive ne sont livrés.** La base est vide à l’exception d’un unique compte administrateur et des paramètres techniques.
+**Aucun mode démonstration, aucun compte de démonstration et aucune donnée fictive ne sont livrés.** La base est vide à l’exception d’un unique compte administrateur et des paramètres techniques, jusqu’à l’import facultatif du répertoire cartographique public.
 
 Les **patients créent eux-mêmes leur compte** depuis la page publique (identifiant Santé+ et QR code générés automatiquement). Les comptes **médecin** et **établissement** restent créés ou validés par l’administration.
 
@@ -14,12 +14,16 @@ cp .env.example .env.local
 # Renseignez DATABASE_URL, SESSION_SECRET, DATA_ENCRYPTION_KEY et le compte administrateur.
 npm run db:migrate
 npm run db:bootstrap
+npm run db:import:health-facilities
 npm run dev -- --hostname 0.0.0.0 --port 3000
 ```
 
 - `db:migrate` applique les migrations versionnées de `drizzle/`.
 - `db:bootstrap` crée **un seul** administrateur si la base est vide, avec mot de passe temporaire et changement obligatoire à la première connexion. Il refuse de s’exécuter sur une base déjà peuplée.
+- `db:import:health-facilities` importe les hôpitaux, centres et pharmacies cartographiés dans [OpenStreetMap via l’export HOT/HDX du Bénin](https://data.humdata.org/dataset/hotosm_ben_health_facilities). L’import est répétable et conserve l’identifiant OSM, la source, la date du relevé et la licence ODbL.
 - Ne lancez jamais `db:bootstrap` pour « réinitialiser » une base réelle. Les migrations sont la source de vérité du schéma.
+
+Le répertoire OSM est communautaire et incomplet : la présence d’un lieu ne garantit ni son activité, ni ses horaires ou ses services. Les données sont présentées comme non vérifiées et attribuées à [OpenStreetMap](https://www.openstreetmap.org/copyright). Aucune pharmacie de garde n’est affichée sans calendrier daté et vérifiable ; l’export de lieux ne constitue pas un registre officiel. La licence ODbL s’applique aux données importées.
 
 ## Variables principales
 
@@ -36,16 +40,17 @@ Les secrets et `.env.local` ne doivent jamais être ajoutés à Git. En producti
 ## Première connexion administrateur
 
 1. Connectez-vous avec l’email et le mot de passe temporaires fournis par `db:bootstrap`.
-2. Scannez le QR code dans une application TOTP.
-3. Définissez un mot de passe définitif d’au moins 12 caractères.
+2. Définissez un mot de passe définitif d’au moins 12 caractères.
 
 Le mot de passe temporaire n’est affiché qu’une seule fois. Conservez-le dans un canal sûr jusqu’à la première connexion, puis détruisez-le.
+
+Les connexions professionnelles et administrateur reposent actuellement sur le mot de passe seul ; cette configuration est moins sûre qu’une authentification multifacteur et ne doit pas être considérée comme adaptée à la production de données de santé.
 
 ## Système complet d’inscription, d’authentification et espace patient
 
 ### 1. Inscription et accès dédiés
 - **/inscription** : page dédiée d'inscription patient avec validation en direct du nom, prénom, email, téléphone (unicité contrôlée en base), mot de passe (≥12 caractères, lettres et chiffres obligatoires, vérification anti-dictionnaire, confirmation identique). Consentement obligatoire à la politique de confidentialité (loi 2017-20). Rôle serveur **strictement forcé à `patient`**.
-- **/connexion** : page dédiée de connexion sécurisée (email/téléphone + mot de passe), gestion des statuts de sécurité (2FA, changement de mot de passe initial pour les praticiens).
+- **/connexion** : page dédiée de connexion (email/téléphone + mot de passe) et changement obligatoire du mot de passe temporaire à la première connexion.
 - **/mot-de-passe-oublie & /reinitialiser** : parcours de réinitialisation sécurisé sans divulgation d'existence de compte. Émission d'un code à usage unique valable 30 minutes, soit généré à la demande, soit remis par l'administration dans le panneau Utilisateurs après vérification d'identité.
 - **/espace** : route protégée au niveau serveur. Toute requête sans session valide est redirigée vers `/connexion`.
 
@@ -67,7 +72,7 @@ Depuis l’espace administrateur :
 
 1. **Établissements** : créez d’abord les établissements réels.
 2. **Utilisateurs** : créez les comptes médecin ou établissement. Un mot de passe temporaire est généré et affiché une seule fois.
-3. Remettez les identifiants par un canal sûr. Les médecins et comptes établissement doivent activer la 2FA et changer leur mot de passe temporaire.
+3. Remettez les identifiants par un canal sûr. Les médecins et comptes établissement doivent changer leur mot de passe temporaire à la première connexion.
 
 Une personne peut aussi déposer une demande d’accès professionnel depuis la page publique ; elle n’obtient aucun droit avant validation par un administrateur.
 

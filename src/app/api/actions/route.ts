@@ -302,7 +302,7 @@ export async function POST(request: Request) {
           await tx.insert(auditLogs).values({ userId: user.id, action: "Accès approuvé", resource: access.applicantName, details: access.role });
         });
         credentials = { email: access.email, password, role: access.role };
-        return Response.json({ message: "Accès validé. Communiquez le mot de passe temporaire par un canal sécurisé ; le professionnel configurera son 2FA à la première connexion.", credentials });
+        return Response.json({ message: "Accès validé. Communiquez le mot de passe temporaire par un canal sécurisé ; le professionnel devra le remplacer à la première connexion.", credentials });
       }
       await db.update(accessRequests).set({ status: decision, reviewedAt: new Date() }).where(eq(accessRequests.id, access.id));
       await writeAudit(user.id, "Accès refusé", access.applicantName, access.role);

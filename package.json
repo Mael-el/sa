@@ -9,7 +9,9 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:bootstrap": "node scripts/bootstrap-admin.mjs"
+    "db:bootstrap": "node scripts/bootstrap-admin.mjs",
+    "db:import:health-facilities": "node scripts/import-health-facilities.mjs",
+    "test:admin-auth": "node scripts/test-admin-auth.mjs"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

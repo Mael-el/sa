@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, check, doublePrecision, index, integer, jsonb, pgTable, serial, text, timestamp, varchar } from "drizzle-orm/pg-core";
+import { boolean, check, date, doublePrecision, index, integer, jsonb, pgTable, serial, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -16,9 +16,6 @@ export const users = pgTable("users", {
   isActive: boolean("is_active").notNull().default(true),
   mustChangePassword: boolean("must_change_password").notNull().default(true),
   privacyAcceptedAt: timestamp("privacy_accepted_at"),
-  twoFactorSecret: text("two_factor_secret"),
-  twoFactorEnrolledAt: timestamp("two_factor_enrolled_at"),
-  lastTotpCounter: integer("last_totp_counter"),
   passwordChangedAt: timestamp("password_changed_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => [
@@ -203,6 +200,33 @@ export const pharmacies = pgTable("pharmacies", {
   hours: varchar("hours", { length: 100 }).notNull().default("08:00 – 20:00"),
 }, (table) => [check("pharmacies_coordinates_check", sql`${table.latitude} between -90 and 90 and ${table.longitude} between -180 and 180`)]);
 
+export const healthFacilityListings = pgTable("health_facility_listings", {
+  id: serial("id").primaryKey(),
+  sourceId: varchar("source_id", { length: 100 }).notNull(),
+  name: varchar("name", { length: 180 }),
+  kind: varchar("kind", { length: 30 }).notNull(),
+  category: varchar("category", { length: 60 }).notNull(),
+  city: varchar("city", { length: 100 }),
+  locality: varchar("locality", { length: 100 }),
+  address: text("address"),
+  phone: varchar("phone", { length: 40 }),
+  openingHours: varchar("opening_hours", { length: 180 }),
+  latitude: doublePrecision("latitude").notNull(),
+  longitude: doublePrecision("longitude").notNull(),
+  sourceName: varchar("source_name", { length: 100 }).notNull(),
+  sourceUrl: text("source_url").notNull(),
+  sourceLicense: varchar("source_license", { length: 100 }).notNull(),
+  sourceSnapshotDate: date("source_snapshot_date").notNull(),
+  sourceRetrievedAt: timestamp("source_retrieved_at").notNull().defaultNow(),
+  sourceProperties: jsonb("source_properties").notNull(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("health_facility_source_id_idx").on(table.sourceId),
+  index("health_facility_kind_locality_idx").on(table.kind, table.locality),
+  check("health_facility_kind_check", sql`${table.kind} in ('facility', 'pharmacy')`),
+  check("health_facility_coordinates_check", sql`${table.latitude} between -90 and 90 and ${table.longitude} between -180 and 180`),
+]);
+
 export const purchaseOrders = pgTable("purchase_orders", {
   id: serial("id").primaryKey(),
   hospitalId: integer("hospital_id").notNull().references(() => hospitals.id),
@@ -251,7 +275,6 @@ export const sessions = pgTable("sessions", {
   id: serial("id").primaryKey(),
   tokenHash: varchar("token_hash", { length: 64 }).notNull().unique(),
   userId: integer("user_id").notNull().references(() => users.id),
-  twoFactorVerified: boolean("two_factor_verified").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   expiresAt: timestamp("expires_at").notNull(),
   revokedAt: timestamp("revoked_at"),

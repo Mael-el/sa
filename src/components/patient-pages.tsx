@@ -160,7 +160,7 @@ function IdentityCard({ data, toast }: Pick<ScreenProps, "data" | "toast">) {
 /* Modal de réservation de rendez-vous                                */
 /* ------------------------------------------------------------------ */
 
-function BookingModal({ open, onClose, data, act }: { open: boolean; onClose: () => void } & Pick<ScreenProps, "data" | "act">) {
+function BookingModal({ open, onClose, data, act, go }: { open: boolean; onClose: () => void } & Pick<ScreenProps, "data" | "act" | "go">) {
   const [hospitalId, setHospitalId] = useState(String(data.hospitals[0]?.id || ""));
   const availableDoctors = data.doctors.filter((item) => item.hospitalId === Number(hospitalId) && item.status === "actif");
   const [doctorId, setDoctorId] = useState("");
@@ -215,6 +215,7 @@ function BookingModal({ open, onClose, data, act }: { open: boolean; onClose: ()
             }}
             required
           >
+            {!data.hospitals.some((hospital) => hospital.isActive) && <option value="">Aucun établissement partenaire</option>}
             {data.hospitals.filter((hospital) => hospital.isActive).map((hospital) => (
               <option key={hospital.id} value={hospital.id}>{hospital.shortName} · {hospital.city}</option>
             ))}
@@ -243,6 +244,12 @@ function BookingModal({ open, onClose, data, act }: { open: boolean; onClose: ()
             </select>
           </label>
         </div>
+        {!availableDoctors.length && (
+          <div className="form-info">
+            Les médecins cartographiés ne disposent pas encore d’un agenda SANTÉ+ vérifié. Seuls les praticiens inscrits dans le réseau peuvent recevoir une réservation.
+            <button type="button" className="text-link" onClick={() => { onClose(); go("locations"); }}>Consulter les établissements et cabinets référencés</button>
+          </div>
+        )}
         <div className="form-grid">
           <label className="field">
             <span>Date souhaitée *</span>
@@ -532,7 +539,7 @@ function PatientOverview(props: ScreenProps) {
         </div>
       </div>
 
-      <BookingModal open={booking} onClose={() => setBooking(false)} data={data} act={props.act} />
+      <BookingModal open={booking} onClose={() => setBooking(false)} data={data} act={props.act} go={props.go} />
     </div>
   );
 }
@@ -839,7 +846,7 @@ function PatientAppointments(props: ScreenProps) {
         </div>
       </section>
 
-      <BookingModal open={booking} onClose={() => setBooking(false)} data={data} act={act} />
+      <BookingModal open={booking} onClose={() => setBooking(false)} data={data} act={act} go={props.go} />
       <RescheduleModal id={rescheduling} onClose={() => setRescheduling(null)} data={data} act={act} />
     </div>
   );
@@ -1583,71 +1590,178 @@ function PatientDonations({ data, act }: ScreenProps) {
 /* 10. Trouver un centre                                              */
 /* ------------------------------------------------------------------ */
 
+const FACILITY_CATEGORY_LABELS: Record<string, string> = {
+  alternative: "Médecine alternative",
+  blood_bank: "Banque de sang",
+  birthing_centre: "Maternité",
+  centre: "Centre de santé",
+  clinic: "Clinique",
+  dentist: "Cabinet dentaire",
+  doctor: "Cabinet médical",
+  doctors: "Cabinet médical",
+  hospital: "Hôpital / centre de soins",
+  laboratory: "Laboratoire médical",
+  nurse: "Soins infirmiers",
+  psychotherapist: "Psychothérapie",
+  rehabilitation: "Réadaptation",
+  social_facility: "Structure médico-sociale",
+  yes: "Structure de santé (catégorie non précisée)",
+};
+
 function PatientLocations({ data }: ScreenProps) {
   const [tab, setTab] = useState<"hospitals" | "pharmacies">("hospitals");
   const [query, setQuery] = useState("");
-  const hospitals = data.hospitals.filter((h) => !query || `${h.name} ${h.city}`.toLowerCase().includes(query.toLowerCase()));
-  const pharmacies = data.pharmacies.filter((p) => !query || `${p.name} ${p.city}`.toLowerCase().includes(query.toLowerCase()));
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [page, setPage] = useState(0);
+  const search = query.toLowerCase();
+  const pageSize = 30;
+  const hospitals = [
+    ...data.hospitals.map((hospital) => ({
+      id: `hospital-${hospital.id}`,
+      name: hospital.name,
+      category: hospital.type,
+      city: hospital.city,
+      address: hospital.address,
+      phone: hospital.phone || null,
+      details: `Capacité : ${hospital.bedsTotal} lits (${hospital.bedsTotal - hospital.bedsOccupied} disponibles)`,
+      status: hospital.isActive ? "actif" : "inactif",
+      categoryKey: hospital.type,
+      sourceUrl: null,
+      sourceName: null,
+      sourceLicense: null,
+      sourceSnapshotDate: null,
+    })),
+    ...data.healthFacilities.filter((facility) => facility.kind === "facility").map((facility) => ({
+      id: `osm-${facility.id}`,
+      name: facility.name || "Établissement sans nom",
+      category: FACILITY_CATEGORY_LABELS[facility.category === "doctors" ? "doctor" : facility.category] || facility.category.replaceAll("_", " "),
+      city: facility.city || facility.locality || "Localité non renseignée",
+      address: facility.address,
+      phone: facility.phone,
+      details: null,
+      status: null,
+      categoryKey: facility.category === "doctors" ? "doctor" : facility.category,
+      sourceUrl: facility.sourceUrl,
+      sourceName: facility.sourceName,
+      sourceLicense: facility.sourceLicense,
+      sourceSnapshotDate: facility.sourceSnapshotDate,
+    })),
+  ];
+  const pharmacies = [
+    ...data.pharmacies.map((pharmacy) => ({
+      id: `pharmacy-${pharmacy.id}`,
+      name: pharmacy.name,
+      category: "Pharmacie",
+      city: pharmacy.city,
+      address: pharmacy.address,
+      phone: pharmacy.phone || null,
+      hours: pharmacy.hours || null,
+      categoryKey: "pharmacy",
+      sourceUrl: null,
+      sourceName: null,
+      sourceLicense: null,
+      sourceSnapshotDate: null,
+    })),
+    ...data.healthFacilities.filter((facility) => facility.kind === "pharmacy").map((facility) => ({
+      id: `osm-${facility.id}`,
+      name: facility.name || "Pharmacie sans nom",
+      category: "Pharmacie",
+      city: facility.city || facility.locality || "Localité non renseignée",
+      address: facility.address,
+      phone: facility.phone,
+      hours: facility.openingHours,
+      categoryKey: "pharmacy",
+      sourceUrl: facility.sourceUrl,
+      sourceName: facility.sourceName,
+      sourceLicense: facility.sourceLicense,
+      sourceSnapshotDate: facility.sourceSnapshotDate,
+    })),
+  ];
+  const categoryOptions = [...new Map((tab === "hospitals" ? hospitals : pharmacies).map((location) => [location.categoryKey, location.category])).entries()]
+    .sort((a, b) => a[1].localeCompare(b[1], "fr"));
+  const searchSuggestions = (tab === "hospitals" ? hospitals : pharmacies)
+    .filter((location) => location.name !== "Établissement sans nom" && location.name !== "Pharmacie sans nom")
+    .filter((location) => !search || `${location.name} ${location.city}`.toLowerCase().includes(search))
+    .slice(0, 50);
+  const matchesLocation = (location: { categoryKey: string; name: string; city: string; category: string }) =>
+    (categoryFilter === "all" || location.categoryKey === categoryFilter) &&
+    `${location.name} ${location.city} ${location.category}`.toLowerCase().includes(search);
+  const matchingHospitals = hospitals.filter(matchesLocation);
+  const matchingPharmacies = pharmacies.filter(matchesLocation);
+  const visibleHospitals = matchingHospitals.slice(page * pageSize, (page + 1) * pageSize);
+  const visiblePharmacies = matchingPharmacies.slice(page * pageSize, (page + 1) * pageSize);
+  const matchingCount = tab === "hospitals" ? matchingHospitals.length : matchingPharmacies.length;
+  const updateQuery = (value: string) => { setQuery(value); setPage(0); };
+  const updateCategory = (value: string) => { setCategoryFilter(value); setPage(0); };
 
   return (
     <div>
-      <PageHeading eyebrow="RÉSEAU DE SANTÉ" title="Trouver un centre" subtitle="Hôpitaux, cliniques partenaires et pharmacies disponibles au Bénin." />
+      <PageHeading eyebrow="RÉSEAU DE SANTÉ" title="Trouver un centre" subtitle="Établissements de santé et pharmacies cartographiés au Bénin. Vérifiez les informations avant de vous déplacer." />
       <div className="location-toolbar">
         <div className="tabs">
-          <button className={tab === "hospitals" ? "active" : ""} onClick={() => setTab("hospitals")}>Hôpitaux & Cliniques ({hospitals.length})</button>
-          <button className={tab === "pharmacies" ? "active" : ""} onClick={() => setTab("pharmacies")}>Pharmacies ({pharmacies.length})</button>
+          <button className={tab === "hospitals" ? "active" : ""} onClick={() => { setTab("hospitals"); updateCategory("all"); }}>Établissements & professionnels ({hospitals.length})</button>
+          <button className={tab === "pharmacies" ? "active" : ""} onClick={() => { setTab("pharmacies"); updateCategory("all"); }}>Pharmacies ({pharmacies.length})</button>
         </div>
+        <label className="field location-category-filter"><span>Type</span><select value={categoryFilter} onChange={(event) => updateCategory(event.target.value)}><option value="all">Tous les types</option>{categoryOptions.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
         <div className="search-field">
           <Search size={16} />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Filtrer par nom ou ville..." />
+          <input value={query} onChange={(e) => updateQuery(e.target.value)} placeholder="Rechercher un nom ou une ville..." list="health-location-suggestions" aria-label="Rechercher un établissement par nom ou ville" />
+          <datalist id="health-location-suggestions">{searchSuggestions.map((location) => <option key={location.id} value={location.name} label={`${location.city} · ${location.category}`} />)}</datalist>
         </div>
       </div>
 
       <div className="location-grid">
         {tab === "hospitals" ? (
-          hospitals.length ? (
-            hospitals.map((h) => (
-              <div className="location-card" key={h.id}>
+          visibleHospitals.length ? (
+            visibleHospitals.map((hospital) => (
+              <div className="location-card" key={hospital.id}>
                 <div className="location-card-head">
                   <div>
-                    <span className="type-tag blue">{h.type.toUpperCase()}</span>
-                    <h3>{h.name}</h3>
+                    <span className="type-tag blue">{hospital.category.toUpperCase()}</span>
+                    <h3>{hospital.name}</h3>
                   </div>
                   <Hospital size={22} className="location-icon" />
                 </div>
-                <p><MapPin size={14} /> {h.address}, {h.city}</p>
-                {h.phone && <p><Phone size={14} /> <a href={`tel:${h.phone}`}>{h.phone}</a></p>}
+                <p><MapPin size={14} /> {hospital.address ? `${hospital.address}, ` : ""}{hospital.city}</p>
+                {hospital.phone && <p><Phone size={14} /> <a href={`tel:${hospital.phone}`}>{hospital.phone}</a></p>}
                 <div className="location-card-foot">
-                  <span>Capacité : {h.bedsTotal} lits ({h.bedsTotal - h.bedsOccupied} disponibles)</span>
-                  <StatusBadge status={h.isActive ? "actif" : "inactif"} />
+                  {hospital.details ? <><span>{hospital.details}</span>{hospital.status && <StatusBadge status={hospital.status} />}</> : <span>Établissement cartographié · activité à confirmer</span>}
                 </div>
+                {hospital.sourceUrl && <p className="location-source">Source : {hospital.sourceName} · relevé du {hospital.sourceSnapshotDate} · {hospital.sourceLicense} · <a href={hospital.sourceUrl} target="_blank" rel="noreferrer">Voir la carte<ExternalLink size={12} /></a></p>}
               </div>
             ))
           ) : (
             <EmptyState title="Aucun établissement trouvé" />
           )
-        ) : pharmacies.length ? (
-          pharmacies.map((p) => (
-            <div className="location-card" key={p.id}>
+        ) : visiblePharmacies.length ? (
+          visiblePharmacies.map((pharmacy) => (
+            <div className="location-card" key={pharmacy.id}>
               <div className="location-card-head">
                 <div>
                   <span className="type-tag mint">PHARMACIE</span>
-                  <h3>{p.name}</h3>
+                  <h3>{pharmacy.name}</h3>
                 </div>
                 <Pill size={22} className="location-icon" />
               </div>
-              <p><MapPin size={14} /> {p.address}, {p.city}</p>
-              {p.phone && <p><Phone size={14} /> <a href={`tel:${p.phone}`}>{p.phone}</a></p>}
+              <p><MapPin size={14} /> {pharmacy.address ? `${pharmacy.address}, ` : ""}{pharmacy.city}</p>
+              {pharmacy.phone && <p><Phone size={14} /> <a href={`tel:${pharmacy.phone}`}>{pharmacy.phone}</a></p>}
               <div className="location-card-foot">
-                <span>Horaires : {p.hours || "Ouvert"}</span>
-                <span className="status-badge status-positive"><i></i> Ouverte</span>
+                <span>{pharmacy.hours ? `Horaires déclarés : ${pharmacy.hours}` : "Horaires non renseignés"}</span>
+                <span className="status-badge">Garde non renseignée</span>
               </div>
+              {pharmacy.sourceUrl && <p className="location-source">Source : {pharmacy.sourceName} · relevé du {pharmacy.sourceSnapshotDate} · {pharmacy.sourceLicense} · <a href={pharmacy.sourceUrl} target="_blank" rel="noreferrer">Voir la carte<ExternalLink size={12} /></a></p>}
             </div>
           ))
         ) : (
           <EmptyState title="Aucune pharmacie trouvée" />
         )}
       </div>
+      {matchingCount > pageSize && <div className="location-pagination">
+        <span>{page * pageSize + 1}–{Math.min((page + 1) * pageSize, matchingCount)} sur {matchingCount}</span>
+        <button className="btn btn-outline btn-sm" disabled={page === 0} onClick={() => setPage(page - 1)}>Précédent</button>
+        <button className="btn btn-outline btn-sm" disabled={(page + 1) * pageSize >= matchingCount} onClick={() => setPage(page + 1)}>Suivant</button>
+      </div>}
+      <p className="location-data-note">Les noms proposés sont ceux des lieux ou cabinets cartographiés, pas un annuaire vérifié de médecins individuels. Ces données OpenStreetMap peuvent être incomplètes ou anciennes et ne confirment ni l’activité ni l’ouverture. Les médecins réservables doivent être inscrits et validés dans le réseau SANTÉ+. Aucun calendrier de pharmacie de garde daté et vérifiable n’étant disponible, aucune garde actuelle n’est affichée. <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">Attribution et licence OpenStreetMap<ExternalLink size={12} /></a></p>
     </div>
   );
 }

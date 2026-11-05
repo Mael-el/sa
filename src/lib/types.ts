@@ -1,8 +1,9 @@
 export type Role = "patient" | "doctor" | "hospital" | "admin";
 
-export type UserView = { id: number; fullName: string; email: string; phone: string | null; role: string; npi: string | null; bloodGroup: string | null; birthDate: string | null; city: string | null; hospitalId: number | null; isActive: boolean; mustChangePassword: boolean; twoFactorEnrolledAt: string | null; createdAt: string };
+export type UserView = { id: number; fullName: string; email: string; phone: string | null; role: string; npi: string | null; bloodGroup: string | null; birthDate: string | null; city: string | null; hospitalId: number | null; isActive: boolean; mustChangePassword: boolean; createdAt: string };
 export type Hospital = { id: number; name: string; shortName: string; city: string; address: string; phone: string; type: string; latitude: number; longitude: number; bedsTotal: number; bedsOccupied: number; isActive: boolean };
 export type Pharmacy = { id: number; name: string; city: string; address: string; phone: string; latitude: number; longitude: number; hours: string };
+export type HealthFacilityListing = { id: number; sourceId: string; name: string | null; kind: "facility" | "pharmacy"; category: string; city: string | null; locality: string | null; address: string | null; phone: string | null; openingHours: string | null; latitude: number; longitude: number; sourceName: string; sourceUrl: string; sourceLicense: string; sourceSnapshotDate: string };
 export type DoctorView = { id: number; userId: number; hospitalId: number; specialty: string; licenseNumber: string; status: string; yearsExperience: number; name: string; email: string; phone: string | null; hospitalName: string };
 export type Appointment = { id: number; patientId: number; doctorId: number; hospitalId: number; scheduledAt: string; reason: string; type: string; status: string; createdAt: string };
 export type MedicalRecord = { id: number; patientId: number; doctorId: number | null; hospitalId: number | null; category: string; title: string; description: string; details: string | null; recordedAt: string };
@@ -27,6 +28,7 @@ export type BootstrapData = {
   user: UserView;
   hospitals: Hospital[];
   pharmacies: Pharmacy[];
+  healthFacilities: HealthFacilityListing[];
   doctors: DoctorView[];
   users: UserView[];
   appointments: Appointment[];

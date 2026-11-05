@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent, type ReactNode } from "react";
-import { QRCodeSVG } from "qrcode.react";
 import { ArrowLeft, ArrowRight, CheckCircle2, Eye, EyeOff, HeartPulse, LockKeyhole, Mail, Phone, ShieldCheck } from "lucide-react";
 import { passwordProblem } from "@/lib/passwords";
 
@@ -51,7 +50,7 @@ function FieldError({ message }: { message: string }) {
 /* Connexion                                                           */
 /* ------------------------------------------------------------------ */
 
-type Pending = { stage: "2fa"; challenge: string } | { stage: "2fa-setup"; challenge: string; secret: string; otpauth: string } | { stage: "password-change"; challenge: string } | null;
+type Pending = { stage: "password-change"; challenge: string } | null;
 
 export function LoginForm() {
   const router = useRouter();
@@ -59,7 +58,6 @@ export function LoginForm() {
   const [password, setPassword] = useState("");
   const [visible, setVisible] = useState(false);
   const [pending, setPending] = useState<Pending>(null);
-  const [otp, setOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -72,22 +70,9 @@ export function LoginForm() {
     setError(""); setLoading(true);
     try {
       const result = await authRequest({ action: "login", identifier: identifier.trim(), password });
-      if (result.needs2FASetup) { setPending({ stage: "2fa-setup", challenge: result.challenge, secret: result.setupSecret, otpauth: result.otpauthUrl }); return; }
-      if (result.needs2FA) { setPending({ stage: "2fa", challenge: result.challenge }); return; }
       if (result.needsPasswordChange) { setPending({ stage: "password-change", challenge: result.challenge }); return; }
       finish();
     } catch (err) { setError(err instanceof Error ? err.message : "Connexion impossible."); }
-    finally { setLoading(false); }
-  };
-
-  const submitOtp = async (event: FormEvent) => {
-    event.preventDefault(); setError(""); setLoading(true);
-    try {
-      if (!pending) return;
-      const result = await authRequest({ action: "verify2fa", challenge: pending.challenge, code: otp });
-      if (result.needsPasswordChange) { setPending({ stage: "password-change", challenge: result.challenge }); return; }
-      finish();
-    } catch (err) { setError(err instanceof Error ? err.message : "Code refusé."); }
     finally { setLoading(false); }
   };
 
@@ -104,24 +89,6 @@ export function LoginForm() {
     } catch (err) { setError(err instanceof Error ? err.message : "Changement impossible."); }
     finally { setLoading(false); }
   };
-
-  if (pending?.stage === "2fa-setup") return <AuthShell title="Configurez la double authentification" subtitle="Obligatoire pour les comptes professionnels et administrateurs." footer={null}>
-    <form className="form-stack" onSubmit={submitOtp}>
-      <div className="totp-qr"><QRCodeSVG value={pending.otpauth} size={168} /></div>
-      <label className="field"><span>Clé de configuration manuelle</span><code className="totp-secret">{pending.secret}</code></label>
-      <label className="field"><span>Code à 6 chiffres</span><input className="otp-input" value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" placeholder="000000" maxLength={6} required /></label>
-      <FieldError message={error} />
-      <button className="btn btn-primary btn-full" disabled={loading || otp.length !== 6}>{loading ? "Vérification..." : "Activer la 2FA"}<ShieldCheck size={17} /></button>
-    </form>
-  </AuthShell>;
-
-  if (pending?.stage === "2fa") return <AuthShell title="Vérification en deux étapes" subtitle="Saisissez le code généré par votre application d’authentification.">
-    <form className="form-stack" onSubmit={submitOtp}>
-      <label className="field"><span>Code de vérification</span><input className="otp-input" value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" placeholder="000000" maxLength={6} required /></label>
-      <FieldError message={error} />
-      <button className="btn btn-primary btn-full" disabled={loading || otp.length !== 6}>{loading ? "Vérification..." : "Valider"}<LockKeyhole size={17} /></button>
-    </form>
-  </AuthShell>;
 
   if (pending?.stage === "password-change") return <AuthShell title="Activer votre compte" subtitle="Remplacez le mot de passe temporaire par un mot de passe personnel.">
     <form className="form-stack" onSubmit={submitPasswordChange}>

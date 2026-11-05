@@ -108,7 +108,7 @@ export const ARTICLES: Article[] = [
     excerpt: "Conformément à la loi 2017-20 sur le numérique en République du Bénin, vos données de santé sont chiffrées et protégées sous le contrôle exclusif du patient.",
     keyPoints: [
       "Chiffrement fort AES-256 des documents et dossiers médicaux",
-      "Double authentification (2FA) obligatoire pour tous les professionnels",
+      "Comptes professionnels validés par l’administration avant leur activation",
       "Droit d'accès, d'opposition et de portabilité en un clic depuis votre espace",
     ],
     content: [

@@ -5,7 +5,7 @@ import { db } from "@/db";
 import { sessions, users } from "@/db/schema";
 
 const COOKIE_NAME = "sante_session";
-export type TokenPurpose = "2fa" | "2fa-setup" | "password-change";
+export type TokenPurpose = "password-change";
 
 function secret() {
   const value = process.env.SESSION_SECRET;
@@ -33,15 +33,14 @@ export function verifySignedToken(token: string, purpose: TokenPurpose): number 
   } catch { return null; }
 }
 
-export async function setSession(userId: number, twoFactorVerified = false) {
+export async function setSession(userId: number) {
   const token = randomBytes(32).toString("base64url");
   const [user] = await db.select({ role: users.role, mustChangePassword: users.mustChangePassword }).from(users).where(eq(users.id, userId)).limit(1);
   if (!user) throw new Error("Unknown user");
   if (user.mustChangePassword) throw new Error("Initial password change required");
   const privileged = ["doctor", "hospital", "admin"].includes(user.role);
-  if (privileged && !twoFactorVerified) throw new Error("Two-factor authentication required");
   const ttl = privileged ? 60 * 60 * 12 : 60 * 60 * 24 * 7;
-  await db.insert(sessions).values({ tokenHash: digest(token), userId, twoFactorVerified, expiresAt: new Date(Date.now() + ttl * 1000) });
+  await db.insert(sessions).values({ tokenHash: digest(token), userId, expiresAt: new Date(Date.now() + ttl * 1000) });
   (await cookies()).set(COOKIE_NAME, token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict", path: "/", maxAge: ttl });
 }
 
@@ -59,51 +58,11 @@ export async function getSessionUser() {
   if (!session) return null;
   const [user] = await db.select().from(users).where(eq(users.id, session.userId)).limit(1);
   if (!user?.isActive || user.mustChangePassword) return null;
-  if (["doctor", "hospital", "admin"].includes(user.role) && !session.twoFactorVerified) return null;
   return user;
 }
 
-export function totpCode(hexSecret: string, timestamp = Date.now()) {
-  const counter = Math.floor(timestamp / 30000);
-  const buffer = Buffer.alloc(8);
-  buffer.writeBigUInt64BE(BigInt(counter));
-  const digest = createHmac("sha1", Buffer.from(hexSecret, "hex")).update(buffer).digest();
-  const offset = digest[digest.length - 1] & 0x0f;
-  return String((digest.readUInt32BE(offset) & 0x7fffffff) % 1000000).padStart(6, "0");
-}
-
-export function verifyTotpCounter(hexSecret: string, input: string): number | null {
-  if (!/^\d{6}$/.test(input)) return null;
-  const current = Math.floor(Date.now() / 30000);
-  for (const offset of [-1, 0, 1]) {
-    const counter = current + offset;
-    if (totpCode(hexSecret, counter * 30000) === input) return counter;
-  }
-  return null;
-}
-
-export function totpBase32(hexSecret: string) {
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-  const buffer = Buffer.from(hexSecret, "hex");
-  let bits = 0;
-  let value = 0;
-  let result = "";
-  for (const byte of buffer) {
-    value = (value << 8) | byte;
-    bits += 8;
-    while (bits >= 5) { result += alphabet[(value >>> (bits - 5)) & 31]; bits -= 5; }
-  }
-  if (bits > 0) result += alphabet[(value << (5 - bits)) & 31];
-  return result;
-}
-
-export function otpauthUrl(email: string, hexSecret: string) {
-  const issuer = "SANTÉ+ Bénin";
-  return `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(email)}?secret=${totpBase32(hexSecret)}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
-}
-
 export function publicUser(user: typeof users.$inferSelect) {
-  return { id: user.id, fullName: user.fullName, email: user.email, phone: user.phone, role: user.role, npi: user.npi, bloodGroup: user.bloodGroup, birthDate: user.birthDate, city: user.city, hospitalId: user.hospitalId, isActive: user.isActive, mustChangePassword: user.mustChangePassword, twoFactorEnrolledAt: user.twoFactorEnrolledAt, createdAt: user.createdAt };
+  return { id: user.id, fullName: user.fullName, email: user.email, phone: user.phone, role: user.role, npi: user.npi, bloodGroup: user.bloodGroup, birthDate: user.birthDate, city: user.city, hospitalId: user.hospitalId, isActive: user.isActive, mustChangePassword: user.mustChangePassword, createdAt: user.createdAt };
 }
 
 /** Révoque toutes les sessions d'un utilisateur (déconnexion globale). */

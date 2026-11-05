@@ -15,6 +15,20 @@
       "when": 1793891553377,
       "tag": "0001_password_resets",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793909967958,
+      "tag": "0002_health_facility_listings",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793916138705,
+      "tag": "0003_remove_two_factor_authentication",
+      "breakpoints": true
     }
   ]
 }

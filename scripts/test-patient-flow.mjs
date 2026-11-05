@@ -15,7 +15,7 @@ async function run() {
   console.log("=== DÉBUT DES TESTS COMPLETS ESPACE PATIENT ===");
 
   // Nettoyage préalable des éventuels comptes de test
-  const dbClient = new pg.Client({ connectionString: process.env.DATABASE_URL || process.env.MIGRATION_DATABASE_URL });
+  const dbClient = new pg.Client({ connectionString: process.env.MIGRATION_DATABASE_URL });
   await dbClient.connect();
   await dbClient.query(`
     delete from sessions where user_id in (select id from users where email in ('test.awa@santeplus.test', 'test.koffi@santeplus.test', 'test.pirate@santeplus.test'));
@@ -50,6 +50,7 @@ async function run() {
   const dataAwa = await reg1.json();
   console.log(`✓ Awa inscrite avec succès : id=${dataAwa.user.id}, role=${dataAwa.user.role}, npi=${dataAwa.user.npi}`);
   if (dataAwa.user.role !== "patient") throw new Error("Le rôle doit être strictement 'patient'");
+  if (dataAwa.user.birthDate !== "1994-06-15") throw new Error("La date de naissance n'a pas été persistée lors de l'inscription");
 
   // 2. Inscription Patient 2 (Koffi)
   console.log("\n2. Inscription de Koffi Mensah (Patient 2)...");
@@ -130,7 +131,11 @@ async function run() {
   if (bootAwa.user.email !== "test.awa@santeplus.test") throw new Error("Bootstrap Awa corrompu");
   if (bootKoffi.user.email !== "test.koffi@santeplus.test") throw new Error("Bootstrap Koffi corrompu");
   if (bootAwa.user.id === bootKoffi.user.id) throw new Error("Collision d'identifiants");
+  if (!bootAwa.healthFacilities?.some((facility) => facility.kind === "facility") || !bootAwa.healthFacilities?.some((facility) => facility.kind === "pharmacy" && facility.sourceName === "OpenStreetMap")) {
+    throw new Error("Le répertoire OpenStreetMap des établissements et pharmacies n'est pas exposé par le bootstrap");
+  }
   console.log(`✓ Isolation confirmée : Awa (${bootAwa.user.npi}) et Koffi (${bootKoffi.user.npi}) ont chacun leur espace isolé`);
+  console.log(`✓ Répertoire public chargé : ${bootAwa.healthFacilities.length} lieux sourcés`);
 
   // 6. Test modification du profil personnel de Awa
   console.log("\n6. Test modification du profil personnel (Awa)...");
