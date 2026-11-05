@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { useState } from "react";
 import {
   ArrowRight,
   Building2,
@@ -13,12 +14,14 @@ import {
   HeartPulse,
   Hospital,
   LockKeyhole,
+  Menu,
   Newspaper,
   Phone,
   Plus,
   ShieldCheck,
   Stethoscope,
   UserRound,
+  X,
 } from "lucide-react";
 import { AuthModal } from "@/components/auth-modal";
 import { ARTICLES } from "@/lib/news";
@@ -38,6 +41,7 @@ export function WelcomeScreen({
   onAuthenticated: () => Promise<void>;
   toast: (message: string, type?: "success" | "error") => void;
 }) {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const featuredArticles = ARTICLES.slice(0, 3);
 
   return (
@@ -93,7 +97,66 @@ export function WelcomeScreen({
             Ouvrir mon dossier <ArrowRight size={15} />
           </button>
         </div>
+        <button
+          type="button"
+          className="classic-mobile-toggle"
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          aria-label={mobileMenuOpen ? "Fermer le menu" : "Ouvrir le menu de navigation"}
+          aria-expanded={mobileMenuOpen}
+        >
+          {mobileMenuOpen ? <X size={22} /> : <Menu size={22} />}
+        </button>
       </header>
+
+      {/* TIROIR DE NAVIGATION MOBILE */}
+      {mobileMenuOpen && (
+        <div className="classic-mobile-drawer">
+          <nav className="classic-mobile-nav">
+            <a href="#piliers" onClick={() => setMobileMenuOpen(false)}>
+              La plateforme
+            </a>
+            <a href="#actualites" onClick={() => setMobileMenuOpen(false)}>
+              Actualités & Recommandations
+            </a>
+            <a href="#securite" onClick={() => setMobileMenuOpen(false)}>
+              Sécurité & Cadre Légal (APDP)
+            </a>
+            <a href="#inscription" onClick={() => setMobileMenuOpen(false)}>
+              Inscription Patient
+            </a>
+            <button
+              type="button"
+              className="mobile-nav-btn"
+              onClick={() => {
+                setMobileMenuOpen(false);
+                onAuthOpen("access");
+              }}
+            >
+              Espace Professionnels (Médecins & Établissements)
+            </button>
+          </nav>
+          <div className="classic-mobile-actions">
+            <button
+              className="btn btn-primary btn-full"
+              onClick={() => {
+                setMobileMenuOpen(false);
+                onAuthOpen("register");
+              }}
+            >
+              Créer mon compte patient <ArrowRight size={15} />
+            </button>
+            <button
+              className="btn btn-outline btn-full"
+              onClick={() => {
+                setMobileMenuOpen(false);
+                onAuthOpen("login");
+              }}
+            >
+              Se connecter à mon espace
+            </button>
+          </div>
+        </div>
+      )}
 
       <main>
         {/* HÉROS INSTITUTIONNEL CLASSIQUE */}

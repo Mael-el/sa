@@ -10,6 +10,8 @@ import {
   CheckCircle2,
   Clock3,
   HeartPulse,
+  LockKeyhole,
+  Menu,
   Plus,
   Search,
   ShieldCheck,
@@ -19,6 +21,7 @@ import {
 import { ARTICLES, type Article } from "@/lib/news";
 
 export function NewsPageClient() {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [category, setCategory] = useState<string>("tous");
   const [search, setSearch] = useState<string>("");
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
@@ -45,15 +48,37 @@ export function NewsPageClient() {
   }, [category, search]);
 
   return (
-    <div className="public-site">
-      <header className="public-header">
-        <Link href="/" className="public-logo">
-          <span className="brand-mark">
-            <Plus size={24} strokeWidth={3.5} />
+    <div className="public-site classic-site">
+      {/* BANDEAU INSTITUTIONNEL */}
+      <div className="institution-topbar">
+        <div className="institution-topbar-inner">
+          <div className="institution-flag-wrap">
+            <span className="flag-bar green" />
+            <span className="flag-bar yellow" />
+            <span className="flag-bar red" />
+            <strong>RÉPUBLIQUE DU BÉNIN</strong>
+            <span className="institution-sep">·</span>
+            <span>MINISTÈRE DE LA SANTÉ</span>
+          </div>
+          <div className="institution-top-meta">
+            <span><ShieldCheck size={13} /> Espace Officiel d’Information</span>
+            <span className="institution-sep">·</span>
+            <span><LockKeyhole size={13} /> Conforme Loi n° 2017-20 (APDP)</span>
+          </div>
+        </div>
+      </div>
+
+      <header className="public-header classic-header">
+        <Link href="/" className="public-logo classic-logo">
+          <span className="brand-mark classic-mark">
+            <Plus size={22} strokeWidth={3} />
           </span>
-          <strong>SANTÉ<span>+</span></strong>
+          <div className="logo-titles">
+            <strong>SANTÉ<span>+</span></strong>
+            <small>INFORMATIONS & SANTÉ PUBLIQUE</small>
+          </div>
         </Link>
-        <nav>
+        <nav className="classic-nav">
           <Link href="/">Accueil</Link>
           <Link href="/actualites" className="active">Actualités</Link>
           <Link href="/inscription">Inscription</Link>
@@ -64,10 +89,38 @@ export function NewsPageClient() {
             Créer un compte
           </Link>
           <Link href="/connexion" className="btn btn-primary">
-            Accéder à mon espace <ArrowRight size={16} />
+            Mon espace <ArrowRight size={15} />
           </Link>
         </div>
+        <button
+          type="button"
+          className="classic-mobile-toggle"
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          aria-label={mobileMenuOpen ? "Fermer le menu" : "Ouvrir le menu de navigation"}
+          aria-expanded={mobileMenuOpen}
+        >
+          {mobileMenuOpen ? <X size={22} /> : <Menu size={22} />}
+        </button>
       </header>
+
+      {mobileMenuOpen && (
+        <div className="classic-mobile-drawer">
+          <nav className="classic-mobile-nav">
+            <Link href="/" onClick={() => setMobileMenuOpen(false)}>Accueil</Link>
+            <Link href="/actualites" className="active" onClick={() => setMobileMenuOpen(false)}>Actualités & Conseils</Link>
+            <Link href="/inscription" onClick={() => setMobileMenuOpen(false)}>Inscription Patient</Link>
+            <Link href="/confidentialite" onClick={() => setMobileMenuOpen(false)}>Protection des données</Link>
+          </nav>
+          <div className="classic-mobile-actions">
+            <Link href="/inscription" className="btn btn-primary btn-full" onClick={() => setMobileMenuOpen(false)}>
+              Créer mon compte patient <ArrowRight size={15} />
+            </Link>
+            <Link href="/connexion" className="btn btn-outline btn-full" onClick={() => setMobileMenuOpen(false)}>
+              Se connecter
+            </Link>
+          </div>
+        </div>
+      )}
 
       <main className="actualites-main">
         <section className="actualites-hero">
@@ -238,10 +291,15 @@ export function NewsPageClient() {
         )}
       </main>
 
-      <footer className="public-footer">
-        <span>© {new Date().getFullYear()} SANTÉ+ Bénin · Plateforme nationale de santé numérique</span>
-        <Link href="/confidentialite">Confidentialité & droits des patients</Link>
-        <a href="tel:112">Urgence médicale : 112</a>
+      <footer className="classic-footer-bottom" style={{ borderTop: "1px solid #e2e8f0", background: "#0a1b2e", padding: "22px 0" }}>
+        <div className="footer-bottom-inner" style={{ color: "#94a3b8" }}>
+          <p>© 2026 République du Bénin — Ministère de la Santé. Tous droits réservés.</p>
+          <div className="footer-bottom-links">
+            <Link href="/confidentialite">Confidentialité & droits APDP</Link>
+            <span>·</span>
+            <a href="tel:112">Urgences : 112</a>
+          </div>
+        </div>
       </footer>
     </div>
   );

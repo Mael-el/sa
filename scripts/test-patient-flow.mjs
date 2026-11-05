@@ -15,7 +15,7 @@ async function run() {
   console.log("=== DÉBUT DES TESTS COMPLETS ESPACE PATIENT ===");
 
   // Nettoyage préalable des éventuels comptes de test
-  const dbClient = new pg.Client({ connectionString: process.env.MIGRATION_DATABASE_URL });
+  const dbClient = new pg.Client({ connectionString: process.env.DATABASE_URL || process.env.MIGRATION_DATABASE_URL });
   await dbClient.connect();
   await dbClient.query(`
     delete from sessions where user_id in (select id from users where email in ('test.awa@santeplus.test', 'test.koffi@santeplus.test', 'test.pirate@santeplus.test'));
