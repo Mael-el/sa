@@ -1608,6 +1608,7 @@ const FACILITY_CATEGORY_LABELS: Record<string, string> = {
   rehabilitation: "Réadaptation",
   social_facility: "Structure médico-sociale",
   yes: "Structure de santé (catégorie non précisée)",
+  pharmacy: "Pharmacie",
 };
 
 function PatientLocations({ data }: ScreenProps) {

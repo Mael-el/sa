@@ -11,7 +11,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:bootstrap": "node scripts/bootstrap-admin.mjs",
     "db:import:health-facilities": "node scripts/import-health-facilities.mjs",
-    "test:admin-auth": "node scripts/test-admin-auth.mjs"
+    "test:admin-auth": "node scripts/test-admin-auth.mjs",
+    "db:import:health-facilities:file": "node scripts/import-health-facilities-file.mjs"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
