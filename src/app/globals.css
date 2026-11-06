@@ -2953,3 +2953,72 @@ h1, h2, h3, h4, h5, h6 {
     flex-wrap: wrap;
   }
 }
+
+/* --- Administration : modération et exports --------------------------------- */
+
+.row-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.data-table td .row-actions {
+  white-space: nowrap;
+}
+
+.export-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 12px;
+}
+
+.export-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+  text-decoration: none;
+  transition: .18s ease;
+}
+
+.export-card:hover {
+  border-color: var(--brand);
+  box-shadow: 0 6px 16px -10px rgba(29, 78, 216, .5);
+  transform: translateY(-1px);
+}
+
+.export-card > div:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+
+.export-card strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--navy-800);
+}
+
+.export-card span {
+  display: block;
+  margin-top: 3px;
+  font-size: 10px;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.export-card > svg {
+  color: var(--brand);
+  flex-shrink: 0;
+}
+
+@media (max-width: 620px) {
+  .row-actions {
+    width: 100%;
+  }
+}

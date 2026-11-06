@@ -57,7 +57,7 @@ const navigation: Record<Role, NavGroup[]> = {
   ],
   admin: [
     { title: "MENU PRINCIPAL", items: [{ id: "overview", label: "Vue nationale", icon: LayoutDashboard }, { id: "access", label: "Demandes d’accès", icon: UserCheck }, { id: "users", label: "Utilisateurs", icon: Users }, { id: "hospitals", label: "Établissements", icon: Hospital }, { id: "patients", label: "Patients", icon: UserRound }] },
-    { title: "SUPERVISION", items: [{ id: "payments", label: "Paiements", icon: Wallet }, { id: "statistics", label: "Statistiques", icon: FileBarChart2 }, { id: "privacy", label: "Droits des patients", icon: LockKeyhole }, { id: "audit", label: "Journal d’audit", icon: ShieldCheck }, { id: "settings", label: "Paramètres", icon: Settings2 }] },
+    { title: "SUPERVISION", items: [{ id: "payments", label: "Paiements", icon: Wallet }, { id: "statistics", label: "Statistiques", icon: FileBarChart2 }, { id: "communication", label: "Communication", icon: MessageCircle }, { id: "privacy", label: "Droits des patients", icon: LockKeyhole }, { id: "audit", label: "Journal d’audit", icon: ShieldCheck }, { id: "settings", label: "Paramètres", icon: Settings2 }] },
   ],
 };
 const roleNames: Record<Role, string> = { patient: "Patient", doctor: "Médecin", hospital: "Hôpital", admin: "Admin SANTÉ+" };

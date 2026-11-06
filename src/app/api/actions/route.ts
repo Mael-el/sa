@@ -2,7 +2,7 @@ import { randomBytes, randomInt } from "node:crypto";
 import { hash } from "bcryptjs";
 import { and, eq, isNull, ne, or } from "drizzle-orm";
 import { db } from "@/db";
-import { accessRequests, appointments, auditLogs, bloodDonations, bloodStocks, careConsents, doctors, hospitalServices, hospitals, medicalRecords, notifications, payments, platformSettings, prescriptions, privacyRequests, purchaseOrders, sessions, stockItems, users, type Medication } from "@/db/schema";
+import { accessRequests, appointments, auditLogs, bloodDonations, bloodStocks, careConsents, doctors, hospitalServices, hospitals, medicalDocuments, medicalRecords, notifications, passwordResets, payments, platformSettings, prescriptions, privacyRequests, purchaseOrders, sessions, stockItems, users, type Medication } from "@/db/schema";
 import { getSessionUser } from "@/lib/auth";
 import { hasCareConsent, sameOrigin, withinRateLimit } from "@/lib/security";
 import { checkInteractions } from "@/lib/clinical";
@@ -39,6 +39,10 @@ export async function POST(request: Request) {
       if (!Number.isInteger(doctorId) || !Number.isInteger(hospitalId) || !Number.isFinite(scheduledAt.getTime()) || scheduledAt.getTime() <= Date.now() || reason.length > 500) return fail("Choisissez un médecin, une date future et un motif valide.");
       const [doctor] = await db.select().from(doctors).where(and(eq(doctors.id, doctorId), eq(doctors.hospitalId, hospitalId))).limit(1);
       if (!doctor || doctor.status !== "actif") return fail("Ce médecin n'est pas disponible dans cet établissement.");
+      const [doctorAccount] = await db.select({ isActive: users.isActive }).from(users).where(eq(users.id, doctor.userId)).limit(1);
+      if (!doctorAccount?.isActive) return fail("Ce médecin n'est pas disponible dans cet établissement.");
+      const [targetHospital] = await db.select({ isActive: hospitals.isActive }).from(hospitals).where(eq(hospitals.id, hospitalId)).limit(1);
+      if (!targetHospital?.isActive) return fail("Cet établissement ne reçoit pas de nouveaux rendez-vous pour le moment.");
       const [conflict] = await db.select().from(appointments).where(and(eq(appointments.doctorId, doctorId), eq(appointments.scheduledAt, scheduledAt), ne(appointments.status, "annulé"))).limit(1);
       if (conflict) return fail("Ce créneau est déjà réservé. Choisissez une autre heure.", 409);
       const [appointment] = await db.insert(appointments).values({ patientId: user.id, doctorId, hospitalId, scheduledAt, reason, type: asText(body.type) || "Consultation", status: "confirmé" }).returning();
@@ -330,6 +334,148 @@ export async function POST(request: Request) {
       return Response.json({ message: `Compte ${target.isActive ? "désactivé" : "activé"}.` });
     }
 
+    if (action === "setDoctorStatus") {
+      if (role !== "admin") return fail("Accès réservé à l'administration.", 403);
+      const doctorId = asNumber(body.id);
+      const status = asText(body.status);
+      if (!["actif", "suspendu", "inactif"].includes(status)) return fail("Statut de médecin invalide.");
+      const [doctor] = await db.select().from(doctors).where(eq(doctors.id, doctorId)).limit(1);
+      if (!doctor) return fail("Médecin introuvable.", 404);
+      const [doctorUser] = await db.select().from(users).where(eq(users.id, doctor.userId)).limit(1);
+      if (!doctorUser) return fail("Compte du médecin introuvable.", 404);
+      const suspended = status !== "actif";
+      await db.transaction(async (tx) => {
+        await tx.update(doctors).set({ status }).where(eq(doctors.id, doctorId));
+        // Suspension : le compte ne peut plus se connecter et toutes ses sessions tombent immédiatement.
+        if (suspended && doctorUser.isActive) await tx.update(users).set({ isActive: false }).where(eq(users.id, doctor.userId));
+        if (suspended) await tx.update(sessions).set({ revokedAt: new Date() }).where(and(eq(sessions.userId, doctor.userId), isNull(sessions.revokedAt)));
+        if (!suspended && !doctorUser.isActive) await tx.update(users).set({ isActive: true }).where(eq(users.id, doctor.userId));
+        await tx.insert(auditLogs).values({
+          userId: user.id,
+          action: suspended ? "Suspension de médecin" : "Réactivation de médecin",
+          resource: doctorUser.fullName,
+          details: `Statut clinique : ${doctor.status} → ${status}`,
+        });
+      });
+      return Response.json({ message: suspended ? "Médecin suspendu. Ses sessions ont été révoquées et il n'est plus réservable." : "Médecin réactivé." });
+    }
+
+    if (action === "updateHospital") {
+      if (role !== "admin") return fail("Accès réservé à l'administration.", 403);
+      const hospitalId = asNumber(body.id);
+      const [hospital] = await db.select().from(hospitals).where(eq(hospitals.id, hospitalId)).limit(1);
+      if (!hospital) return fail("Établissement introuvable.", 404);
+      const name = asText(body.name) || hospital.name;
+      const shortName = asText(body.shortName) || hospital.shortName;
+      const city = asText(body.city) || hospital.city;
+      const address = asText(body.address) || hospital.address;
+      const phone = asText(body.phone) || hospital.phone;
+      const type = asText(body.type) || hospital.type;
+      const latitude = body.latitude === undefined || body.latitude === "" ? hospital.latitude : asNumber(body.latitude);
+      const longitude = body.longitude === undefined || body.longitude === "" ? hospital.longitude : asNumber(body.longitude);
+      const bedsTotal = body.bedsTotal === undefined || body.bedsTotal === "" ? hospital.bedsTotal : asNumber(body.bedsTotal);
+      const bedsOccupied = body.bedsOccupied === undefined || body.bedsOccupied === "" ? hospital.bedsOccupied : asNumber(body.bedsOccupied);
+      if (name.length < 3 || shortName.length < 2 || city.length < 2 || address.length < 5 || phone.length < 8) return fail("Complétez le nom, le sigle, la ville, l'adresse et le téléphone.");
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return fail("Coordonnées géographiques invalides.");
+      if (!Number.isInteger(bedsTotal) || bedsTotal < 0 || !Number.isInteger(bedsOccupied) || bedsOccupied < 0) return fail("Capacité en lits invalide.");
+      if (bedsOccupied > bedsTotal) return fail("Les lits occupés ne peuvent pas dépasser la capacité totale.");
+      await db.update(hospitals).set({ name, shortName, city, address, phone, type, latitude, longitude, bedsTotal, bedsOccupied }).where(eq(hospitals.id, hospitalId));
+      await writeAudit(user.id, "Modification d'établissement", shortName, `${city} · ${bedsOccupied}/${bedsTotal} lits`);
+      return Response.json({ message: "Établissement mis à jour." });
+    }
+
+    if (action === "toggleHospital") {
+      if (role !== "admin") return fail("Accès réservé à l'administration.", 403);
+      const [hospital] = await db.select().from(hospitals).where(eq(hospitals.id, asNumber(body.id))).limit(1);
+      if (!hospital) return fail("Établissement introuvable.", 404);
+      const nextActive = !hospital.isActive;
+      const restoreStaff = body.restoreStaff === true;
+      await db.transaction(async (tx) => {
+        await tx.update(hospitals).set({ isActive: nextActive }).where(eq(hospitals.id, hospital.id));
+        // Fermeture : les comptes rattachés perdent l'accès immédiatement.
+        if (!nextActive) {
+          const staff = await tx.select({ id: users.id }).from(users).where(eq(users.hospitalId, hospital.id));
+          if (staff.length) await tx.update(users).set({ isActive: false }).where(eq(users.hospitalId, hospital.id));
+          for (const member of staff) {
+            await tx.update(sessions).set({ revokedAt: new Date() }).where(and(eq(sessions.userId, member.id), isNull(sessions.revokedAt)));
+          }
+        }
+        // Réouverture : l'administrateur peut restaurer d'un coup l'accès des comptes rattachés.
+        if (nextActive && restoreStaff) await tx.update(users).set({ isActive: true }).where(eq(users.hospitalId, hospital.id));
+        await tx.insert(auditLogs).values({
+          userId: user.id,
+          action: nextActive ? "Réouverture d'établissement" : "Fermeture d'établissement",
+          resource: hospital.shortName,
+          details: nextActive
+            ? restoreStaff ? "Comptes rattachés réactivés automatiquement" : "Comptes rattachés laissés inactifs"
+            : "Comptes rattachés désactivés et sessions révoquées",
+        });
+      });
+      const restoredMessage = nextActive
+        ? restoreStaff ? "Établissement réactivé. Les comptes rattachés ont retrouvé leur accès." : "Établissement réactivé. Les comptes rattachés restent inactifs jusqu'à réactivation manuelle."
+        : "Établissement désactivé. Les comptes rattachés ont été désactivés et déconnectés.";
+      return Response.json({ message: restoredMessage });
+    }
+
+    if (action === "deleteAccount") {
+      if (role !== "admin") return fail("Accès réservé à l'administration.", 403);
+      const targetId = asNumber(body.id);
+      if (targetId === user.id) return fail("Vous ne pouvez pas supprimer votre propre compte administrateur.");
+      const [target] = await db.select().from(users).where(eq(users.id, targetId)).limit(1);
+      if (!target) return fail("Utilisateur introuvable.", 404);
+      if (target.role === "admin") return fail("Un compte administrateur ne peut pas être supprimé depuis cette interface.");
+      const [doctor] = await db.select({ id: doctors.id }).from(doctors).where(eq(doctors.userId, target.id)).limit(1);
+      const [records] = await db.select({ id: medicalRecords.id }).from(medicalRecords).where(eq(medicalRecords.patientId, target.id)).limit(1);
+      const [documents] = await db.select({ id: medicalDocuments.id }).from(medicalDocuments).where(eq(medicalDocuments.patientId, target.id)).limit(1);
+      const [scripts] = await db.select({ id: prescriptions.id }).from(prescriptions).where(eq(prescriptions.patientId, target.id)).limit(1);
+      const [bill] = await db.select({ id: payments.id }).from(payments).where(eq(payments.patientId, target.id)).limit(1);
+      if (doctor || records || documents || scripts) {
+        return fail("Ce compte porte des données cliniques : la suppression est refusée. Désactivez le compte et traitez une demande d'effacement conforme.", 409);
+      }
+      if (bill) {
+        return fail("Ce compte est lié à des écritures financières : la suppression effacerait la traçabilité des paiements. Désactivez le compte.", 409);
+      }
+      await db.transaction(async (tx) => {
+        await tx.update(accessRequests).set({ reviewedAt: new Date() }).where(eq(accessRequests.email, target.email));
+        await tx.delete(sessions).where(eq(sessions.userId, target.id));
+        await tx.delete(notifications).where(eq(notifications.userId, target.id));
+        await tx.delete(careConsents).where(eq(careConsents.patientId, target.id));
+        await tx.delete(passwordResets).where(eq(passwordResets.userId, target.id));
+        await tx.delete(privacyRequests).where(eq(privacyRequests.patientId, target.id));
+        await tx.delete(bloodDonations).where(eq(bloodDonations.patientId, target.id));
+        await tx.delete(appointments).where(eq(appointments.patientId, target.id));
+        // Le journal d'audit est conservé mais détaché du compte : la clé étrangère est
+        // nullable, on remet user_id à NULL pour garder les lignes sans lien vers un compte supprimé.
+        await tx.update(auditLogs).set({ userId: null }).where(eq(auditLogs.userId, target.id));
+        await tx.delete(users).where(eq(users.id, target.id));
+        await tx.insert(auditLogs).values({ userId: user.id, action: "Suppression de compte", resource: target.email, details: `${target.role} · ${target.id} · journal d'audit conservé et détaché` });
+      });
+      return Response.json({ message: "Compte supprimé. L'historique d'audit est conservé." });
+    }
+
+    if (action === "sendNotification") {
+      if (role !== "admin") return fail("Accès réservé à l'administration.", 403);
+      const title = asText(body.title);
+      const message = asText(body.message);
+      const audience = asText(body.audience) || "all";
+      const category = asText(body.category) || "annonce";
+      if (title.length < 3 || title.length > 180) return fail("Le titre doit contenir entre 3 et 180 caractères.");
+      if (message.length < 5 || message.length > 900) return fail("Le message doit contenir entre 5 et 900 caractères.");
+      if (!["all", "patient", "doctor", "hospital"].includes(audience)) return fail("Audience inconnue.");
+      if (!["annonce", "securite", "maintenance", "info"].includes(category)) return fail("Catégorie inconnue.");
+      const recipients = audience === "all"
+        ? await db.select({ id: users.id }).from(users).where(eq(users.isActive, true))
+        : await db.select({ id: users.id }).from(users).where(and(eq(users.isActive, true), eq(users.role, audience)));
+      if (!recipients.length) return fail("Aucun destinataire actif pour cette audience.", 409);
+      // Insertion par lots : Postgres limite le nombre de paramètres par requête.
+      for (let index = 0; index < recipients.length; index += 200) {
+        const batch = recipients.slice(index, index + 200);
+        await db.insert(notifications).values(batch.map((recipient) => ({ userId: recipient.id, title, message, category })));
+      }
+      await writeAudit(user.id, "Notification diffusée", `Audience : ${audience}`, `${recipients.length} destinataire(s) · ${title}`);
+      return Response.json({ message: `Notification envoyée à ${recipients.length} destinataire(s).`, recipients: recipients.length });
+    }
+
     if (action === "createHospital") {
       if (role !== "admin") return fail("Accès réservé à l'administration.", 403);
       const name = asText(body.name);
@@ -398,8 +544,8 @@ export async function POST(request: Request) {
       if (role !== "patient") return fail("Accès réservé au patient.", 403);
       const [grant] = await db.select().from(careConsents).where(and(eq(careConsents.id, asNumber(body.id)), eq(careConsents.patientId, user.id))).limit(1);
       if (!grant || grant.revokedAt) return fail("Autorisation introuvable ou déjà révoquée.");
-      if (grant.doctorId) await db.update(careConsents).set({ revokedAt: new Date() }).where(and(eq(careConsents.patientId, user.id), eq(careConsents.doctorId, grant.doctorId), isNull(careConsents.revokedAt)));
-      else await db.update(careConsents).set({ revokedAt: new Date() }).where(and(eq(careConsents.patientId, user.id), eq(careConsents.hospitalId, grant.hospitalId), isNull(careConsents.doctorId), isNull(careConsents.revokedAt)));
+      await db.update(careConsents).set({ revokedAt: new Date() })
+        .where(and(eq(careConsents.patientId, user.id), eq(careConsents.id, grant.id), isNull(careConsents.revokedAt)));
       await writeAudit(user.id, "Consentement révoqué", `Autorisation #${grant.id}`, "Effet immédiat");
       return Response.json({ message: "Tous les accès actifs de ce professionnel ont été révoqués immédiatement." });
     }
