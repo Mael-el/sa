@@ -33,6 +33,20 @@ export function verifySignedToken(token: string, purpose: TokenPurpose): number 
   } catch { return null; }
 }
 
+/**
+ * Attribut SameSite du cookie de session.
+ *
+ * En production l'application est servie sur sa propre origine : « strict » est le
+ * réglage le plus sûr. En développement, la prévisualisation Arena affiche l'app
+ * dans une iframe dont l'origine est différente (https://<port>-<id>.e2b.app) :
+ * un cookie « strict » n'y est jamais renvoyé, ce qui provoque une boucle de
+ * connexion (login réussi puis redirection vers /connexion). « lax » y suffit et
+ * reste protégé par la vérification d'origine (sameOrigin) sur chaque mutation.
+ */
+function cookieSameSite(): "strict" | "lax" {
+  return process.env.NODE_ENV === "production" ? "strict" : "lax";
+}
+
 export async function setSession(userId: number) {
   const token = randomBytes(32).toString("base64url");
   const [user] = await db.select({ role: users.role, mustChangePassword: users.mustChangePassword }).from(users).where(eq(users.id, userId)).limit(1);
@@ -41,7 +55,7 @@ export async function setSession(userId: number) {
   const privileged = ["doctor", "hospital", "admin"].includes(user.role);
   const ttl = privileged ? 60 * 60 * 12 : 60 * 60 * 24 * 7;
   await db.insert(sessions).values({ tokenHash: digest(token), userId, expiresAt: new Date(Date.now() + ttl * 1000) });
-  (await cookies()).set(COOKIE_NAME, token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict", path: "/", maxAge: ttl });
+  (await cookies()).set(COOKIE_NAME, token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: cookieSameSite(), path: "/", maxAge: ttl });
 }
 
 export async function clearSession() {
