@@ -3026,3 +3026,224 @@ h1, h2, h3, h4, h5, h6 {
     width: 100%;
   }
 }
+
+/* ============================================================================
+   SANTÉ+ — Correctifs de finition (v3)
+   Corrige les régressions du calque v2 et les états vides peu lisibles.
+   ============================================================================ */
+
+/* --- 1. Bannières : le calque v2 forçait le titre en navy-800 (#0f2a43)
+   sur un dégradé navy, rendant le texte quasi invisible. --------------- */
+.professional-hero h2,
+.professional-hero h2.title,
+.admin-hero h2 {
+  color: #ffffff;
+  text-wrap: balance;
+}
+.professional-hero p { color: #c8d9ef; }
+
+/* --- 2. Bandeau supérieur : la recherche était saisie puis ignorée.
+   Elle filtre désormais en direct la page cible (voir dashboard-app). ----- */
+
+/* --- 3. Actions destructives : « Supprimer » était le seul bouton plein
+   rouge du tableau, ce qui attirait l'œil plus que l'action principale. */
+.btn-danger {
+  background: #ffffff;
+  color: #b91c1c;
+  border-color: #f0c2c2;
+  box-shadow: none;
+}
+.btn-danger:hover:not(:disabled) {
+  background: #fef2f2;
+  border-color: #dc8b8b;
+  color: #991b1b;
+}
+
+/* --- 4. Bandeau de date : « vendredi » en minuscule en milieu de phrase. */
+.today-label { text-transform: none; }
+.today-label::first-letter { text-transform: uppercase; }
+
+/* --- 5. Graphiques à zéro : une barre pleine pour une valeur nulle
+   laissait croire à une activité. On distingue visuellement l'absence de
+   donnée de la barre de fond. ------------------------------------------ */
+.mini-bar-track > div[style*="height: 8%"] { background: #cbd5e1 !important; }
+.mini-bars-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 120px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+/* --- 6. Échelles vides (couverture, capacité) : préciser l'absence de
+   donnée plutôt que laisser un cadre blanc. ---------------------------- */
+.report-empty {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
+  padding: 6px 0;
+}
+
+/* --- 7. États vides génériques : icône plus discrète, texte lisible. --- */
+.empty-state h3 { font-size: 14px; font-weight: 700; color: var(--navy-800); }
+
+/* --- 8. Tableaux : entêtes plus lisibles, alignement des montants. ----- */
+.data-table th { letter-spacing: .04em; }
+.data-table td .amount,
+.data-table .amount { font-variant-numeric: tabular-nums; }
+
+/* --- 9. Densité : un peu plus d'air vertical dans les cartes de liste. - */
+.activity-row { padding: 16px 0; }
+
+/* Graphiques sans donnée : l'absence est dite, les mois restent visibles. */
+.mini-bars.mini-bars-zero {
+  align-items: center;
+  padding: 0 8px;
+}
+.mini-bars-zero .mini-bars-empty {
+  height: 120px;
+  border: 1px dashed #dbe3ee;
+  border-radius: 10px;
+  width: 100%;
+  background: #fbfcfe;
+}
+
+/* ============================================================================
+   Annuaire « Trouver un centre »
+   Les classes .location-grid / .location-card n'existaient pas : les 784
+   lieux s'affichaient en liste brute, sans cartes ni colonnes.
+   ============================================================================ */
+.location-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+  gap: 16px;
+  margin-top: 4px;
+}
+
+.location-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-height: 190px;
+  padding: 18px 19px 16px;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  transition: border-color .18s ease, transform .18s ease, box-shadow .18s ease;
+}
+.location-card:hover {
+  border-color: #bcd2ec;
+  transform: translateY(-2px);
+  box-shadow: 0 9px 22px rgba(30, 64, 120, .08);
+}
+
+.location-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.location-card-head > div { min-width: 0; }
+.location-card-head h3 {
+  margin: 7px 0 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: -.01em;
+  color: var(--navy-800);
+  /* Les noms OSM peuvent être très longs : deux lignes maximum. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.location-icon { color: #cbd5e1; flex-shrink: 0; }
+
+.location-card > p {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #475569;
+}
+.location-card > p svg { color: #94a3b8; flex-shrink: 0; }
+.location-card > p a { color: var(--brand); font-weight: 700; }
+
+.location-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid #f1f5f9;
+  font-size: 11px;
+  color: #64748b;
+}
+
+.location-source {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.6;
+  color: #94a3b8;
+  /* Le lien ne doit pas se scinder au milieu de « Voir la carte ». */
+}
+.location-source a {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--brand);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Étiquette de type : lisible, sans crier. */
+.location-card .type-tag {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-size: 9px;
+  letter-spacing: .06em;
+}
+
+.location-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 22px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+@media (max-width: 620px) {
+  .location-grid { grid-template-columns: 1fr; }
+}
+
+/* Barre de filtres de la page Établissements (255 fiches importées). */
+.hospital-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0 18px;
+  flex-wrap: wrap;
+}
+.hospital-toolbar .search-field { flex: 1 1 280px; min-width: 0; }
+.hospital-toolbar select {
+  height: 38px;
+  border: 1px solid #e8eef6;
+  background: #ffffff;
+  border-radius: 9px;
+  color: #475569;
+  font-size: 13px;
+  padding: 0 10px;
+  outline: 0;
+  max-width: 320px;
+}
+.hospital-toolbar select:focus { border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(37,99,235,.09); }

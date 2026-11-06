@@ -77,9 +77,14 @@ export function DateTile({ value }: { value: string | Date }) {
   return <div className="date-tile"><strong>{new Intl.DateTimeFormat("fr-FR", { day: "2-digit" }).format(date)}</strong><span>{new Intl.DateTimeFormat("fr-FR", { month: "short" }).format(date).replace(".", "")}</span></div>;
 }
 
-export function MiniBars({ values, labels, color = "#2563eb" }: { values: number[]; labels: string[]; color?: string }) {
+export function MiniBars({ values, labels, color = "#2563eb", emptyLabel = "Aucune donnée sur la période" }: { values: number[]; labels: string[]; color?: string; emptyLabel?: string }) {
+  // Sans aucune valeur, six barres pleines laisseraient croire à une activité :
+  // on affiche explicitement l'absence de donnée en conservant les mois.
+  if (!values.some((value) => value > 0)) {
+    return <div className="mini-bars mini-bars-zero"><div className="mini-bars-empty">{emptyLabel}</div></div>;
+  }
   const max = Math.max(...values, 1);
-  return <div className="mini-bars">{values.map((value, index) => <div className="mini-bar-col" key={index}><span className="mini-bar-value">{value}</span><div className="mini-bar-track"><div style={{ height: `${Math.max(8, value / max * 100)}%`, background: color }} /></div><span className="mini-bar-label">{labels[index]}</span></div>)}</div>;
+  return <div className="mini-bars">{values.map((value, index) => <div className="mini-bar-col" key={index}><span className="mini-bar-value">{value || ""}</span><div className="mini-bar-track">{value > 0 && <div style={{ height: `${Math.max(6, value / max * 100)}%`, background: color }} />}</div><span className="mini-bar-label">{labels[index]}</span></div>)}</div>;
 }
 
 export function AuditTimeline({ logs, users }: { logs: AuditLog[]; users: UserView[] }) {

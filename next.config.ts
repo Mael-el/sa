@@ -20,7 +20,8 @@ const csp = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
-  allowedDevOrigins: ["*.e2b.app"],
+  // Origines autorisées en développement : aperçu Arena + accès local direct.
+  allowedDevOrigins: ["*.e2b.app", "localhost", "127.0.0.1"],
   async headers() {
     return [{ source: "/:path*", headers: [
       { key: "Content-Security-Policy", value: csp },

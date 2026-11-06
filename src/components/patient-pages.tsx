@@ -1636,7 +1636,7 @@ function PatientLocations({ data }: ScreenProps) {
     })),
     ...data.healthFacilities.filter((facility) => facility.kind === "facility").map((facility) => ({
       id: `osm-${facility.id}`,
-      name: facility.name || "Établissement sans nom",
+      name: facility.name || `${FACILITY_CATEGORY_LABELS[facility.category] || "Établissement"} (nom non renseigné dans OpenStreetMap)`,
       category: FACILITY_CATEGORY_LABELS[facility.category === "doctors" ? "doctor" : facility.category] || facility.category.replaceAll("_", " "),
       city: facility.city || facility.locality || "Localité non renseignée",
       address: facility.address,
@@ -1667,7 +1667,7 @@ function PatientLocations({ data }: ScreenProps) {
     })),
     ...data.healthFacilities.filter((facility) => facility.kind === "pharmacy").map((facility) => ({
       id: `osm-${facility.id}`,
-      name: facility.name || "Pharmacie sans nom",
+      name: facility.name || "Pharmacie (nom non renseigné dans OpenStreetMap)",
       category: "Pharmacie",
       city: facility.city || facility.locality || "Localité non renseignée",
       address: facility.address,
@@ -1683,7 +1683,7 @@ function PatientLocations({ data }: ScreenProps) {
   const categoryOptions = [...new Map((tab === "hospitals" ? hospitals : pharmacies).map((location) => [location.categoryKey, location.category])).entries()]
     .sort((a, b) => a[1].localeCompare(b[1], "fr"));
   const searchSuggestions = (tab === "hospitals" ? hospitals : pharmacies)
-    .filter((location) => location.name !== "Établissement sans nom" && location.name !== "Pharmacie sans nom")
+    .filter((location) => !location.name.includes("nom non renseigné"))
     .filter((location) => !search || `${location.name} ${location.city}`.toLowerCase().includes(search))
     .slice(0, 50);
   const matchesLocation = (location: { categoryKey: string; name: string; city: string; category: string }) =>
@@ -1730,7 +1730,7 @@ function PatientLocations({ data }: ScreenProps) {
                 <div className="location-card-foot">
                   {hospital.details ? <><span>{hospital.details}</span>{hospital.status && <StatusBadge status={hospital.status} />}</> : <span>Établissement cartographié · activité à confirmer</span>}
                 </div>
-                {hospital.sourceUrl && <p className="location-source">Source : {hospital.sourceName} · relevé du {hospital.sourceSnapshotDate} · {hospital.sourceLicense} · <a href={hospital.sourceUrl} target="_blank" rel="noreferrer">Voir la carte<ExternalLink size={12} /></a></p>}
+                {hospital.sourceUrl && <p className="location-source">Source : {hospital.sourceName} · relevé du {shortDate(hospital.sourceSnapshotDate)} · {hospital.sourceLicense} · <a href={hospital.sourceUrl} target="_blank" rel="noreferrer">Voir la carte<ExternalLink size={12} /></a></p>}
               </div>
             ))
           ) : (
@@ -1752,7 +1752,7 @@ function PatientLocations({ data }: ScreenProps) {
                 <span>{pharmacy.hours ? `Horaires déclarés : ${pharmacy.hours}` : "Horaires non renseignés"}</span>
                 <span className="status-badge">Garde non renseignée</span>
               </div>
-              {pharmacy.sourceUrl && <p className="location-source">Source : {pharmacy.sourceName} · relevé du {pharmacy.sourceSnapshotDate} · {pharmacy.sourceLicense} · <a href={pharmacy.sourceUrl} target="_blank" rel="noreferrer">Voir la carte<ExternalLink size={12} /></a></p>}
+              {pharmacy.sourceUrl && <p className="location-source">Source : {pharmacy.sourceName} · relevé du {shortDate(pharmacy.sourceSnapshotDate)} · {pharmacy.sourceLicense} · <a href={pharmacy.sourceUrl} target="_blank" rel="noreferrer">Voir la carte<ExternalLink size={12} /></a></p>}
             </div>
           ))
         ) : (
