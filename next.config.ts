@@ -10,8 +10,9 @@ const csp = [
   isDevelopment ? "frame-ancestors 'self' https://*.e2b.app" : "frame-ancestors 'none'",
   "form-action 'self'",
   `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "font-src 'self' https://fonts.gstatic.com data:",
+  // Polices auto-hébergées via @fontsource : aucun CDN externe requis.
+  "style-src 'self' 'unsafe-inline'",
+  "font-src 'self' data:",
   "img-src 'self' data: blob: https://*.openstreetmap.org",
   "frame-src https://www.openstreetmap.org",
   "connect-src 'self'",

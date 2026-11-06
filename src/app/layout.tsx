@@ -1,5 +1,9 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+// Polices auto-hébergées : aucun appel à fonts.googleapis.com, qui laissait le site
+// s'afficher en police système lorsque le CDN était bloqué.
+import "@fontsource-variable/figtree";
+import "@fontsource-variable/plus-jakarta-sans";
 import "./globals.css";
 
 export const metadata: Metadata = {
