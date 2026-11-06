@@ -11,6 +11,7 @@ import { PatientPage } from "@/components/patient-pages";
 import { WelcomeScreen } from "@/components/welcome-screen";
 import { Avatar, Modal, firstName, type ActionResult, type ScreenProps } from "@/components/shared";
 import type { BootstrapData, Role } from "@/lib/types";
+import { sessionHeaders, setSessionToken } from "@/lib/session-client";
 
 type NavItem = { id: string; label: string; icon: LucideIcon; badge?: string };
 type NavGroup = { title: string; items: NavItem[] };
@@ -70,7 +71,7 @@ function subscribeOnline(callback: () => void) {
 const getOnlineSnapshot = () => navigator.onLine;
 const getServerOnlineSnapshot = () => true;
 
-export function DashboardApp() {
+export function DashboardApp({ initialAuthenticated = false }: { initialAuthenticated?: boolean }) {
   const router = useRouter();
   const [data, setData] = useState<BootstrapData | null>(null);
   const [page, setPage] = useState("overview");
@@ -96,9 +97,9 @@ export function DashboardApp() {
 
   const refresh = useCallback(async () => {
     try {
-      const response = await fetch("/api/bootstrap", { cache: "no-store" });
+      const response = await fetch("/api/bootstrap", { cache: "no-store", headers: sessionHeaders() });
       const result = await response.json();
-      if (response.status === 401) { setData(null); setLoadError("AUTH_REQUIRED"); return; }
+      if (response.status === 401) { setSessionToken(null); setData(null); setLoadError("AUTH_REQUIRED"); return; }
       if (!response.ok) throw new Error(result.error || "Chargement impossible.");
       setData(result as BootstrapData);
       setLoadError("");
@@ -125,7 +126,7 @@ export function DashboardApp() {
   const act = useCallback(async (action: string, payload: Record<string, unknown> = {}): Promise<ActionResult> => {
     if (!navigator.onLine) { toast("Cette action nécessite une connexion internet.", "error"); throw new Error("Mode hors ligne"); }
     try {
-      const response = await fetch("/api/actions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, ...payload }) });
+      const response = await fetch("/api/actions", { method: "POST", headers: sessionHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ action, ...payload }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Une erreur est survenue.");
       await refresh();
@@ -138,13 +139,14 @@ export function DashboardApp() {
   }, [refresh, toast]);
 
   const logout = async () => {
-    await fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "logout" }) });
+    await fetch("/api/auth", { method: "POST", headers: sessionHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ action: "logout" }) });
+    setSessionToken(null);
     setRoleMenu(false);
     toast("Vous êtes déconnecté(e).");
     router.replace("/connexion"); router.refresh();
   };
 
-  if (!data && !loading && loadError === "AUTH_REQUIRED") return <WelcomeScreen authOpen={authOpen} authStage={authStage} onAuthClose={() => setAuthOpen(false)} onAuthOpen={(stage) => { setAuthStage(stage ?? "login"); setAuthOpen(true); }} onAuthenticated={async () => { await refresh(); go("overview"); }} toast={toast} />;
+  if (!data && !loading && loadError === "AUTH_REQUIRED" && !initialAuthenticated) return <WelcomeScreen authOpen={authOpen} authStage={authStage} onAuthClose={() => setAuthOpen(false)} onAuthOpen={(stage) => { setAuthStage(stage ?? "login"); setAuthOpen(true); }} onAuthenticated={async () => { await refresh(); go("overview"); }} toast={toast} />;
   if (!data) return <div className="loading-screen"><div className="loading-brand"><span className="brand-mark"><Plus size={25} strokeWidth={3.5} /></span><span>SANTÉ<span>+</span></span></div><div className="spinner" /><p>{loading ? "Préparation de votre espace santé..." : loadError || "Connexion indisponible."}</p>{!loading && <button className="btn btn-primary" onClick={() => { setLoading(true); refresh(); }}>Réessayer <ArrowRight size={16} /></button>}</div>;
 
   const role = (data.user.role in navigation ? data.user.role : "patient") as Role;

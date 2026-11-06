@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { ArrowRight, Building2, CheckCircle2, Eye, EyeOff, HeartPulse, LockKeyhole, Mail, ShieldCheck, Stethoscope } from "lucide-react";
 import { Modal } from "@/components/shared";
+import { sessionHeaders, setSessionToken } from "@/lib/session-client";
 
 type Stage = "login" | "register" | "access" | "password-change";
 
@@ -50,9 +51,10 @@ export function AuthModal({ open, onClose, onAuthenticated, toast, initialStage 
       : stage === "register" ? { action: "register", ...register }
       : { action: "requestAccess", ...access };
     try {
-      const response = await fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const response = await fetch("/api/auth", { method: "POST", headers: sessionHeaders({ "Content-Type": "application/json" }), body: JSON.stringify(body) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Une erreur est survenue.");
+      if (typeof result.sessionToken === "string") setSessionToken(result.sessionToken);
       if (result.needsPasswordChange) { setChallenge(result.challenge); setRole(result.role || "patient"); setNewPassword(""); setConfirmPassword(""); setPrivacyConsent(false); setStage("password-change"); return; }
       if (stage === "access") { setSuccess(true); toast(result.message || "Demande envoyée."); return; }
       await onAuthenticated();

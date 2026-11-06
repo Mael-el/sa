@@ -1,5 +1,7 @@
 "use client";
 
+import { sessionHeaders } from "@/lib/session-client";
+
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
@@ -1954,7 +1956,7 @@ function PatientSettings({ data, toast, go }: ScreenProps) {
     try {
       const res = await fetch("/api/auth", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: sessionHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({
           action: "changePassword",
           currentPassword: currentPw,
@@ -1981,7 +1983,7 @@ function PatientSettings({ data, toast, go }: ScreenProps) {
     try {
       await fetch("/api/auth", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: sessionHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({ action: "logoutAll" }),
       });
       router.replace("/connexion"); router.refresh();

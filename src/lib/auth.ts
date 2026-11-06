@@ -64,7 +64,24 @@ async function sessionCookieOptions(ttl: number) {
     : { ...base, secure: false, sameSite: "lax" as const };
 }
 
+/**
+ * Jeton de session transmis hors cookie.
+ *
+ * Certains contextes d'intégration bloquent totalement les cookies tiers : la
+ * prévisualisation Arena affiche l'application dans une iframe dont l'origine
+ * diffère, et Chrome/Safari y refusent alors le cookie de session même en
+ * SameSite=None. Le serveur continue de poser le cookie (cas normal) mais accepte
+ * aussi le jeton via l'en-tête `x-sante-session`, et le renvoie sur les réponses
+ * d'authentification pour que le client puisse le conserver.
+ *
+ * Ce n'est pas un affaiblissement : le jeton reste aléatoire (32 octets), haché en
+ * base, révocable et à durée de vie limitée. L'en-tête étant de nature CORS
+ * (non simple), il ne peut pas être forgé par un site tiers en cross-origin.
+ */
+export const SESSION_HEADER = "x-sante-session";
+
 export async function setSession(userId: number) {
+
   const token = randomBytes(32).toString("base64url");
   const [user] = await db.select({ role: users.role, mustChangePassword: users.mustChangePassword }).from(users).where(eq(users.id, userId)).limit(1);
   if (!user) throw new Error("Unknown user");
@@ -73,17 +90,25 @@ export async function setSession(userId: number) {
   const ttl = privileged ? 60 * 60 * 12 : 60 * 60 * 24 * 7;
   await db.insert(sessions).values({ tokenHash: digest(token), userId, expiresAt: new Date(Date.now() + ttl * 1000) });
   (await cookies()).set(COOKIE_NAME, token, await sessionCookieOptions(ttl));
+  return token;
 }
 
 export async function clearSession() {
   const store = await cookies();
-  const token = store.get(COOKIE_NAME)?.value;
+  const token = (await currentToken());
   if (token) await db.update(sessions).set({ revokedAt: new Date() }).where(eq(sessions.tokenHash, digest(token)));
   store.delete(COOKIE_NAME);
 }
 
+/** Jeton courant : en-tête explicite prioritaire, sinon cookie. */
+async function currentToken(): Promise<string | null> {
+  const fromHeader = (await headers()).get(SESSION_HEADER);
+  if (fromHeader && fromHeader.length >= 35) return fromHeader;
+  return (await cookies()).get(COOKIE_NAME)?.value ?? null;
+}
+
 export async function getSessionUser() {
-  const token = (await cookies()).get(COOKIE_NAME)?.value;
+  const token = await currentToken();
   if (!token || token.length < 35) return null;
   const [session] = await db.select().from(sessions).where(and(eq(sessions.tokenHash, digest(token)), isNull(sessions.revokedAt), gt(sessions.expiresAt, new Date()))).limit(1);
   if (!session) return null;
@@ -103,7 +128,7 @@ export async function revokeAllSessions(userId: number) {
 
 /** Révoque les autres sessions en conservant la session courante. */
 export async function revokeOtherSessions(userId: number) {
-  const token = (await cookies()).get(COOKIE_NAME)?.value;
+  const token = await currentToken();
   const keep = token ? digest(token) : "";
   await db.update(sessions).set({ revokedAt: new Date() }).where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt), keep ? ne(sessions.tokenHash, keep) : undefined));
 }

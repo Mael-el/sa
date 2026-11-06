@@ -5,13 +5,16 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, CheckCircle2, Eye, EyeOff, HeartPulse, LockKeyhole, Mail, Phone, ShieldCheck } from "lucide-react";
 import { passwordProblem } from "@/lib/passwords";
+import { sessionHeaders, setSessionToken } from "@/lib/session-client";
 
 const BLOOD_GROUPS = ["O+", "O-", "A+", "A-", "B+", "B-", "AB+", "AB-"];
 
 async function authRequest(body: Record<string, unknown>) {
-  const response = await fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const response = await fetch("/api/auth", { method: "POST", headers: sessionHeaders({ "Content-Type": "application/json" }), body: JSON.stringify(body) });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.error || "Une erreur est survenue. Réessayez.");
+  // Le cookie peut être refusé (iframe d'origine différente) : on conserve aussi le jeton.
+  if (typeof result.sessionToken === "string") setSessionToken(result.sessionToken);
   return result;
 }
 

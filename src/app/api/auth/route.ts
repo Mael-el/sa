@@ -41,9 +41,9 @@ export async function POST(request: Request) {
       if (existing) return Response.json({ error: "Cet email ou ce numéro est déjà utilisé." }, { status: 409 });
       const npi = `SP-${new Date().getFullYear()}-${randomInt(100000, 999999)}`;
       const [user] = await db.insert(users).values({ fullName, email, phone, passwordHash: await hash(password, 12), role: "patient", npi, bloodGroup: bloodGroup || null, birthDate: birthDate || null, city: city || "Cotonou", mustChangePassword: false, privacyAcceptedAt: new Date(), passwordChangedAt: new Date() }).returning();
-      await setSession(user.id);
+      const sessionToken = await setSession(user.id);
       await db.insert(auditLogs).values({ userId: user.id, action: "Consentement et création de compte", resource: "Politique de confidentialité v1", details: "Acceptation explicite lors de l'inscription" });
-      return Response.json({ user: publicUser(user), message: "Bienvenue sur SANTÉ+ ! Votre identité santé a été créée." }, { status: 201, headers: responseHeaders });
+      return Response.json({ user: publicUser(user), sessionToken, message: "Bienvenue sur SANTÉ+ ! Votre identité santé a été créée." }, { status: 201, headers: responseHeaders });
     }
 
     if (action === "requestPasswordReset") {
@@ -128,9 +128,9 @@ export async function POST(request: Request) {
         return Response.json({ needsPasswordChange: true, role: user.role, challenge: createSignedToken(user.id, "password-change"), message: "Choisissez votre mot de passe personnel pour activer le compte." }, { headers: responseHeaders });
       }
 
-      await setSession(user.id);
+      const sessionToken = await setSession(user.id);
       await db.insert(auditLogs).values({ userId: user.id, action: "Connexion", resource: `Espace ${user.role}` });
-      return Response.json({ user: publicUser(user), message: "Connexion réussie." }, { headers: responseHeaders });
+      return Response.json({ user: publicUser(user), sessionToken, message: "Connexion réussie." }, { headers: responseHeaders });
     }
 
     if (action === "completePasswordChange") {
@@ -146,9 +146,9 @@ export async function POST(request: Request) {
       const [updated] = await db.update(users).set({ passwordHash: await hash(parsed.data.newPassword, 12), mustChangePassword: false, passwordChangedAt: new Date(), ...(user.role === "patient" ? { privacyAcceptedAt: new Date() } : {}) }).where(and(eq(users.id, user.id), eq(users.mustChangePassword, true))).returning();
       if (!updated) return Response.json({ error: "Le compte a déjà été activé." }, { status: 409 });
       await db.update(sessions).set({ revokedAt: new Date() }).where(eq(sessions.userId, user.id));
-      await setSession(user.id);
+      const sessionToken = await setSession(user.id);
       await db.insert(auditLogs).values({ userId: user.id, action: "Activation du compte", resource: "Mot de passe personnel", details: "Mot de passe temporaire remplacé" });
-      return Response.json({ user: publicUser(updated), message: "Votre compte est activé." }, { headers: responseHeaders });
+      return Response.json({ user: publicUser(updated), sessionToken, message: "Votre compte est activé." }, { headers: responseHeaders });
     }
 
     if (action === "requestAccess") {
