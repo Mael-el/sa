@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { and, eq, gt, isNull, ne } from "drizzle-orm";
 import { db } from "@/db";
 import { sessions, users } from "@/db/schema";
@@ -34,17 +34,34 @@ export function verifySignedToken(token: string, purpose: TokenPurpose): number 
 }
 
 /**
- * Attribut SameSite du cookie de session.
+ * Attributs du cookie de session.
  *
- * En production l'application est servie sur sa propre origine : « strict » est le
- * réglage le plus sûr. En développement, la prévisualisation Arena affiche l'app
- * dans une iframe dont l'origine est différente (https://<port>-<id>.e2b.app) :
- * un cookie « strict » n'y est jamais renvoyé, ce qui provoque une boucle de
- * connexion (login réussi puis redirection vers /connexion). « lax » y suffit et
- * reste protégé par la vérification d'origine (sameOrigin) sur chaque mutation.
+ * Le choix dépend du contexte d'intégration, et c'est ce qui rend l'espace
+ * accessible depuis la prévisualisation Arena :
+ *
+ * - Production : l'application est servie sur sa propre origine et n'est pas
+ *   intégrable (frame-ancestors 'none'). « strict » est le réglage le plus sûr.
+ * - Développement sous HTTPS : la prévisualisation affiche l'app dans une iframe
+ *   dont l'origine diffère (https://<port>-<id>.e2b.app). Un cookie « strict » OU
+ *   « lax » n'est alors jamais renvoyé par le navigateur, ce qui provoque la boucle
+ *   « connexion réussie puis retour à /connexion ». Seul « none » (obligatoirement
+ *   accompagné de Secure) est transmis dans un contexte tiers.
+ * - Développement en HTTP simple (127.0.0.1) : « none » exigerait Secure, que le
+ *   navigateur refuserait sur http. On retombe sur « lax ».
+ *
+ * La protection CSRF ne repose pas sur SameSite mais sur sameOrigin(), vérifié
+ * sur chaque mutation : une origine étrangère reste refusée en 403.
  */
-function cookieSameSite(): "strict" | "lax" {
-  return process.env.NODE_ENV === "production" ? "strict" : "lax";
+async function sessionCookieOptions(ttl: number) {
+  const base = { httpOnly: true, path: "/", maxAge: ttl } as const;
+  if (process.env.NODE_ENV === "production") return { ...base, secure: true, sameSite: "strict" as const };
+  const requestHeaders = await headers();
+  const forwardedProto = requestHeaders.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase();
+  const origin = requestHeaders.get("origin") || "";
+  const overHttps = forwardedProto === "https" || origin.startsWith("https://");
+  return overHttps
+    ? { ...base, secure: true, sameSite: "none" as const }
+    : { ...base, secure: false, sameSite: "lax" as const };
 }
 
 export async function setSession(userId: number) {
@@ -55,7 +72,7 @@ export async function setSession(userId: number) {
   const privileged = ["doctor", "hospital", "admin"].includes(user.role);
   const ttl = privileged ? 60 * 60 * 12 : 60 * 60 * 24 * 7;
   await db.insert(sessions).values({ tokenHash: digest(token), userId, expiresAt: new Date(Date.now() + ttl * 1000) });
-  (await cookies()).set(COOKIE_NAME, token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: cookieSameSite(), path: "/", maxAge: ttl });
+  (await cookies()).set(COOKIE_NAME, token, await sessionCookieOptions(ttl));
 }
 
 export async function clearSession() {
