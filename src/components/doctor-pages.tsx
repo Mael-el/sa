@@ -6,9 +6,11 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Activity, AlertCircle, ArrowRight, BadgeCheck, CalendarCheck2, CalendarDays, Camera, Check, CheckCircle2, ChevronRight, ClipboardList, Clock3, Download, FileText, HeartPulse, Info, MapPin, MoreHorizontal, Pill, Plus, ScanLine, Search, ShieldCheck, Sparkles, Stethoscope, Upload, UserRound, Users, X } from "lucide-react";
 import { checkInteractions, clinicalSuggestions } from "@/lib/clinical";
 import { AuditTimeline, Avatar, DateTile, EmptyState, MetricCard, Modal, PageHeading, PatientDetailModal, SearchField, SectionHeading, StatusBadge, hour, longDate, money, relativeDay, shortDate, type ScreenProps } from "@/components/shared";
+import { IdentitySearch } from "@/components/identity-search";
 import type { Medication } from "@/lib/types";
 
 export function DoctorPage({ page, ...props }: ScreenProps & { page: string }) {
+  if (page === "identity") return <IdentitySearch role={props.data.user.role} />;
   if (page === "patients") return <DoctorPatients {...props} />;
   if (page === "consultations") return <DoctorConsultations {...props} />;
   if (page === "agenda") return <DoctorAgenda {...props} />;

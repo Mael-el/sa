@@ -3247,3 +3247,123 @@ h1, h2, h3, h4, h5, h6 {
   max-width: 320px;
 }
 .hospital-toolbar select:focus { border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(37,99,235,.09); }
+
+/* ============================================================================
+   Recherche d'identité par NPI
+   Trois états lisibles : dossier ouvert, fiche seule, accès refusé.
+   ============================================================================ */
+.identity-search-form {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.identity-search-form .search-field { flex: 1 1 320px; min-width: 0; height: 44px; }
+.identity-search-form .search-field input { font-size: 14px; }
+.identity-search-form .btn { min-height: 44px; }
+
+.identity-search-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 14px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #64748b;
+}
+.identity-search-note svg { color: var(--brand); margin-top: 1px; flex-shrink: 0; }
+
+.identity-search-error {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 12px 0 0;
+  padding: 11px 13px;
+  border-radius: 9px;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.identity-results {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.identity-card { padding: 20px 22px; text-align: left; }
+.identity-card.identity-refus { border-color: #f0d5d5; background: #fffdfd; }
+.identity-card.identity-dossier { border-color: #cfe3d8; }
+
+.identity-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 13px;
+  text-align: left;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #f1f5f9;
+}
+.identity-head > div:nth-child(2) { min-width: 0; flex: 1; }
+.identity-head h3 { margin: 0 0 4px; font-size: 16px; letter-spacing: -.01em; }
+.identity-head .mono-text { font-size: 12px; color: #64748b; }
+
+.identity-access {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.identity-access-dossier { background: #ecfdf3; color: #15803d; }
+.identity-access-fiche { background: #eff6ff; color: #1d4ed8; }
+.identity-access-refus { background: #fef2f2; color: #b91c1c; }
+
+.identity-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 14px 20px;
+  padding: 16px 0 4px;
+}
+.identity-meta span { display: block; font-size: 11px; color: #64748b; margin-bottom: 5px; }
+.identity-meta strong { font-size: 13px; color: var(--navy-800); }
+.identity-meta > div { min-width: 0; text-align: left; }
+/* Les badges de statut ne doivent pas s'étendre sur la colonne entière. */
+.identity-meta .status-badge { display: inline-flex; width: auto; }
+
+.identity-reason {
+  text-align: left;
+  margin: 12px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #475569;
+}
+
+.identity-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+.identity-hint { font-size: 11px; color: #64748b; line-height: 1.5; }
+
+.identity-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin-top: 18px;
+  padding: 42px 22px;
+}
+.identity-empty h3 { margin: 0 0 8px; font-size: 15px; color: var(--navy-800); }
+.identity-empty p { margin: 0; max-width: 460px; font-size: 12px; line-height: 1.65; color: #64748b; }
+
+@media (max-width: 620px) {
+  .identity-head { flex-wrap: wrap; }
+  .identity-access { order: 3; }
+}

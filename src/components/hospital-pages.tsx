@@ -3,9 +3,11 @@
 import { useState, type FormEvent } from "react";
 import { Activity, AlertCircle, ArrowRight, BedDouble, Building2, CalendarDays, CheckCircle2, ChevronRight, ClipboardList, Download, Droplets, FileBarChart2, FileText, HeartPulse, Hospital, Info, Package, PackageCheck, Pill, Plus, Search, ShieldCheck, ShoppingCart, Stethoscope, TrendingUp, Truck, UserRound, Users, Wallet } from "lucide-react";
 import { AuditTimeline, Avatar, EmptyState, MetricCard, MiniBars, Modal, PageHeading, PatientDetailModal, SearchField, SectionHeading, StatusBadge, hour, longDate, money, shortDate, type ScreenProps } from "@/components/shared";
+import { IdentitySearch } from "@/components/identity-search";
 import type { HospitalService, StockItem } from "@/lib/types";
 
 export function HospitalPage({ page, ...props }: ScreenProps & { page: string }) {
+  if (page === "identity") return <IdentitySearch role={props.data.user.role} />;
   if (page === "doctors") return <HospitalDoctors {...props} />;
   if (page === "patients") return <HospitalPatients {...props} />;
   if (page === "services") return <HospitalServices {...props} />;

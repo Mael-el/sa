@@ -4,12 +4,14 @@ import { useState, type FormEvent } from "react";
 import { Activity, AlertCircle, ArrowRight, BadgeCheck, BedDouble, Building2, CalendarDays, Check, CheckCircle2, ChevronRight, ClipboardList, Copy, Download, Droplets, FileBarChart2, FileText, Globe2, HeartPulse, Hospital, Info, LockKeyhole, MapPin, MoreHorizontal, Plus, Search, Settings2, ShieldCheck, Stethoscope, TrendingUp, UserCheck, UserRound, Users, Wallet, X } from "lucide-react";
 import { AdminPrivacyRequests } from "@/components/privacy-center";
 import { AuditTimeline, Avatar, EmptyState, MetricCard, MiniBars, Modal, PageHeading, SearchField, SectionHeading, StatusBadge, hour, longDate, money, shortDate, type ScreenProps } from "@/components/shared";
+import { IdentitySearch } from "@/components/identity-search";
 import type { AccessRequest, Hospital as HospitalType, UserView } from "@/lib/types";
 import { copyToClipboard } from "@/lib/clipboard";
 
 export function AdminPage({ page, ...props }: ScreenProps & { page: string }) {
   if (page === "access") return <AdminAccess {...props} />;
   if (page === "users") return <AdminUsers {...props} />;
+  if (page === "identity") return <IdentitySearch role={props.data.user.role} />;
   if (page === "hospitals") return <AdminHospitals {...props} />;
   if (page === "patients") return <AdminPatients {...props} />;
   if (page === "payments") return <AdminPayments {...props} />;

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Activity, AlertCircle, ArrowRight, Bell, BedDouble, Building2, CalendarDays, Check, ChevronDown, ChevronRight, CircleHelp, ClipboardList, Droplets, FileBarChart2, FileHeart, FileText, HeartHandshake, HeartPulse, Hospital, LayoutDashboard, LockKeyhole, LogOut, MapPin, Menu, MessageCircle, Package, Phone, Pill, Plus, ScanLine, Search, Settings2, ShieldCheck, ShoppingCart, Sparkles, Stethoscope, UserCheck, UserRound, Users, Wallet, WifiOff, X, type LucideIcon } from "lucide-react";
+import { Activity, AlertCircle, ArrowRight, Bell, BedDouble, Building2, CalendarDays, Check, ChevronDown, ChevronRight, CircleHelp, ClipboardList, Droplets, FileBarChart2, FileHeart, FileText, Heart, ScanLine, HeartPulse, Hospital, LayoutDashboard, LockKeyhole, LogOut, MapPin, Menu, MessageCircle, Package, Phone, Pill, Plus, Search, Settings2, ShieldCheck, ShoppingCart, Sparkles, Stethoscope, UserCheck, UserRound, Users, Wallet, WifiOff, X, type LucideIcon } from "lucide-react";
 import { AdminPage } from "@/components/admin-pages";
 import { AuthModal } from "@/components/auth-modal";
 import { DoctorPage } from "@/components/doctor-pages";
@@ -36,6 +36,7 @@ const navigation: Record<Role, NavGroup[]> = {
         { id: "payments", label: "Paiements", icon: Wallet },
         { id: "donations", label: "Don de sang", icon: Droplets },
         { id: "locations", label: "Trouver un centre", icon: MapPin },
+        { id: "identity", label: "Rechercher un NPI", icon: ScanLine },
         { id: "assistant", label: "Assistant santé", icon: Sparkles },
       ],
     },
@@ -48,16 +49,16 @@ const navigation: Record<Role, NavGroup[]> = {
     },
   ],
   doctor: [
-    { title: "MENU PRINCIPAL", items: [{ id: "overview", label: "Vue d’ensemble", icon: LayoutDashboard }, { id: "patients", label: "Mes patients", icon: Users }, { id: "consultations", label: "Consultations", icon: Stethoscope }, { id: "agenda", label: "Mon agenda", icon: CalendarDays }, { id: "prescriptions", label: "Ordonnances", icon: Pill }] },
+    { title: "MENU PRINCIPAL", items: [{ id: "overview", label: "Vue d’ensemble", icon: LayoutDashboard }, { id: "identity", label: "Rechercher un NPI", icon: ScanLine }, { id: "patients", label: "Mes patients", icon: Users }, { id: "consultations", label: "Consultations", icon: Stethoscope }, { id: "agenda", label: "Mon agenda", icon: CalendarDays }, { id: "prescriptions", label: "Ordonnances", icon: Pill }] },
     { title: "SÉCURITÉ", items: [{ id: "audit", label: "Journal d’audit", icon: ShieldCheck }, { id: "settings", label: "Paramètres", icon: Settings2 }] },
   ],
   hospital: [
-    { title: "MENU PRINCIPAL", items: [{ id: "overview", label: "Vue d’ensemble", icon: LayoutDashboard }, { id: "doctors", label: "Médecins", icon: Stethoscope }, { id: "patients", label: "Patients & dossiers", icon: Users }, { id: "services", label: "Services & lits", icon: BedDouble }, { id: "pharmacy", label: "Pharmacie & stocks", icon: Pill }] },
+    { title: "MENU PRINCIPAL", items: [{ id: "overview", label: "Vue d’ensemble", icon: LayoutDashboard }, { id: "identity", label: "Rechercher un NPI", icon: ScanLine }, { id: "doctors", label: "Médecins", icon: Stethoscope }, { id: "patients", label: "Patients & dossiers", icon: Users }, { id: "services", label: "Services & lits", icon: BedDouble }, { id: "pharmacy", label: "Pharmacie & stocks", icon: Pill }] },
     { title: "GESTION", items: [{ id: "orders", label: "Commandes", icon: ShoppingCart }, { id: "finances", label: "Ventes & finances", icon: Wallet }, { id: "blood", label: "Stock de sang", icon: Droplets }, { id: "reports", label: "Rapports", icon: FileBarChart2 }] },
     { title: "SÉCURITÉ", items: [{ id: "audit", label: "Journal d’audit", icon: ShieldCheck }, { id: "settings", label: "Paramètres", icon: Settings2 }] },
   ],
   admin: [
-    { title: "MENU PRINCIPAL", items: [{ id: "overview", label: "Vue nationale", icon: LayoutDashboard }, { id: "access", label: "Demandes d’accès", icon: UserCheck }, { id: "users", label: "Utilisateurs", icon: Users }, { id: "hospitals", label: "Établissements", icon: Hospital }, { id: "patients", label: "Patients", icon: UserRound }] },
+    { title: "MENU PRINCIPAL", items: [{ id: "overview", label: "Vue nationale", icon: LayoutDashboard }, { id: "access", label: "Demandes d’accès", icon: UserCheck }, { id: "users", label: "Utilisateurs", icon: Users }, { id: "identity", label: "Rechercher un NPI", icon: ScanLine }, { id: "hospitals", label: "Établissements", icon: Hospital }, { id: "patients", label: "Patients", icon: UserRound }] },
     { title: "SUPERVISION", items: [{ id: "payments", label: "Paiements", icon: Wallet }, { id: "statistics", label: "Statistiques", icon: FileBarChart2 }, { id: "communication", label: "Communication", icon: MessageCircle }, { id: "privacy", label: "Droits des patients", icon: LockKeyhole }, { id: "audit", label: "Journal d’audit", icon: ShieldCheck }, { id: "settings", label: "Paramètres", icon: Settings2 }] },
   ],
 };

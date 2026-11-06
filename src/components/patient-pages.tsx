@@ -72,6 +72,7 @@ import {
   shortDate,
   type ScreenProps,
 } from "@/components/shared";
+import { IdentitySearch } from "@/components/identity-search";
 import type { Appointment, Hospital as HospitalType, Pharmacy } from "@/lib/types";
 import type { SymptomAssessment } from "@/lib/clinical";
 import { passwordProblem } from "@/lib/passwords";
@@ -80,6 +81,7 @@ const BLOOD_GROUPS = ["O+", "O-", "A+", "A-", "B+", "B-", "AB+", "AB-"];
 
 export function PatientPage({ page, ...props }: ScreenProps & { page: string }) {
   if (page === "profile") return <PatientProfile {...props} />;
+  if (page === "identity") return <IdentitySearch role={props.data.user.role} />;
   if (page === "appointments") return <PatientAppointments {...props} />;
   if (page === "records") return <PatientRecords {...props} />;
   if (page === "prescriptions") return <PatientPrescriptions {...props} />;
