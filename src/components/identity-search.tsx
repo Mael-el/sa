@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { AlertCircle, ArrowRight, Building2, FileText, Search, ShieldCheck, ShieldX, Stethoscope, UserRound } from "lucide-react";
 import { PatientDetailModal, StatusBadge } from "@/components/shared";
+import { sessionHeaders } from "@/lib/session-client";
 
 /**
  * Recherche d'une identité santé par NPI, nom ou téléphone.
@@ -55,7 +56,9 @@ export function IdentitySearch({ role }: { role: string }) {
     if (query.trim().length < 3) { setError("Saisissez au moins 3 caractères (NPI, nom ou téléphone)."); return; }
     setLoading(true); setError("");
     try {
-      const response = await fetch(`/api/identity/search?q=${encodeURIComponent(query.trim())}`, { headers: { Accept: "application/json" } });
+      // L'application transmet la session par en-tête : le cookie est bloqué
+      // lorsque la page est affichée dans une iframe d'origine différente.
+      const response = await fetch(`/api/identity/search?q=${encodeURIComponent(query.trim())}`, { headers: sessionHeaders({ Accept: "application/json" }) });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Recherche impossible.");
       setResults(payload.results || []);

@@ -1795,7 +1795,7 @@ function PatientAssistant({ go, openEmergency }: ScreenProps) {
     try {
       const response = await fetch("/api/assistant", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: sessionHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({ message: text }),
       });
       const data = await response.json();
