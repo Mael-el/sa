@@ -1,0 +1,83 @@
+name: Vérifications
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  qualite:
+    name: Types, lint et build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      # `npm ci` respecte strictement le lockfile : une dépendance ajoutée sans
+      # être verrouillée fait échouer la CI plutôt que la production.
+      - run: npm ci
+
+      - name: Vérification des types
+        run: npm run typecheck
+
+      - name: Analyse statique
+        run: npm run lint
+
+      - name: Audit des dépendances de production
+        run: npm audit --omit=dev --audit-level=high
+
+      # Le build est le vrai test d'intégration : il détecte les imports cassés,
+      # les composants serveur mal marqués et les erreurs de rendu statique.
+      - name: Build de production
+        run: npm run build
+        env:
+          # Valeurs factices : le build ne doit dépendre d'aucun secret réel.
+          DATABASE_URL: postgresql://user:pass@127.0.0.1:5432/sante
+          SESSION_SECRET: ci-placeholder-not-a-real-secret-000000000000
+          DATA_ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+
+  migrations:
+    name: Migrations rejouables sur base vierge
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sante
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      # Vérifie qu'une base vierge peut être amenée à l'état attendu uniquement
+      # par des migrations versionnées — jamais par `drizzle-kit push`.
+      - name: Appliquer les migrations
+        run: npm run db:migrate
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/sante
+          MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/sante
+
+      - name: Contrôler le schéma obtenu
+        run: |
+          psql postgresql://postgres:postgres@127.0.0.1:5432/sante -c "\dt" | tee /tmp/tables.txt
+          for table in users sessions care_consents medical_records audit_logs; do
+            grep -q "$table" /tmp/tables.txt || { echo "Table manquante : $table"; exit 1; }
+          done
+          echo "Schéma complet."

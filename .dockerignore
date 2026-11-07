@@ -1,0 +1,12 @@
+# Ne jamais copier dans l'image : secrets, dépendances locales, artefacts de build.
+.env
+.env.local
+.env.*.local
+.git
+.github
+node_modules
+.next
+npm-debug.log*
+coverage
+*.log
+docs/charte-graphique.svg
