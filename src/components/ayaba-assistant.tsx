@@ -14,7 +14,7 @@ import { sessionHeaders } from "@/lib/session-client";
  */
 
 type Topic = { id: string; title: string };
-type Message = { from: "ayaba" | "user"; text: string; related?: Topic[]; suggestions?: Topic[] };
+type Message = { from: "ayaba" | "user"; text: string; related?: Topic[]; suggestions?: Topic[]; needsLogin?: boolean };
 
 /** Rendu minimal du gras `**texte**` et des retours à la ligne, sans innerHTML. */
 function RichText({ text }: { text: string }) {
@@ -35,7 +35,16 @@ function RichText({ text }: { text: string }) {
   );
 }
 
-export function AyabaPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function AyabaPanel({
+  open,
+  onClose,
+  visitor = false,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** Visiteur non connecté : la base de connaissances commune reste accessible. */
+  visitor?: boolean;
+}) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [input, setInput] = useState("");
@@ -74,11 +83,21 @@ export function AyabaPanel({ open, onClose }: { open: boolean; onClose: () => vo
         body: JSON.stringify({ question: clean }),
       });
       const result = await response.json();
+      if (response.status === 401) {
+        // Un visiteur peut parcourir la base commune sans compte ; une question
+        // personnelle (« où en est mon rendez-vous ? ») exige une session.
+        setMessages((previous) => [...previous, {
+          from: "ayaba",
+          text: "Cette question touche à un dossier personnel : connectez-vous pour que je puisse y répondre. Sans compte, je reste disponible sur le fonctionnement général de la plateforme.",
+        }]);
+        return;
+      }
       if (!response.ok) throw new Error(result.error || "Réponse indisponible.");
       setMessages((previous) => [...previous, {
         from: "ayaba",
         text: result.answer,
         related: result.found ? result.related : result.suggestions,
+        needsLogin: Boolean(result.needsLogin),
       }]);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Réponse indisponible.");
@@ -95,7 +114,7 @@ export function AyabaPanel({ open, onClose }: { open: boolean; onClose: () => vo
         <div className="ayaba-avatar"><Sparkles size={18} /></div>
         <div>
           <strong>AYABA</strong>
-          <span>Assistante SANTÉ+ · réponses issues du guide de la plateforme</span>
+          <span>{visitor ? "Assistante SANTÉ+ · fonctionnement de la plateforme" : "Assistante SANTÉ+ · réponses issues du guide de la plateforme"}</span>
         </div>
         <button className="ayaba-close" onClick={onClose} aria-label="Fermer AYABA">✕</button>
       </header>
@@ -106,6 +125,12 @@ export function AyabaPanel({ open, onClose }: { open: boolean; onClose: () => vo
             {message.from === "ayaba" && <div className="ayaba-bubble-avatar"><Bot size={14} /></div>}
             <div className="ayaba-bubble">
               <RichText text={message.text} />
+              {message.needsLogin && (
+                <div className="ayaba-login-cta">
+                  <a href="/connexion">Se connecter</a>
+                  <a href="/inscription">Créer un compte</a>
+                </div>
+              )}
               {message.related && message.related.length > 0 && (
                 <div className="ayaba-chips">
                   {message.related.map((topic) => (

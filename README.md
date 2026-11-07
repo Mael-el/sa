@@ -72,7 +72,9 @@ Les connexions professionnelles et administrateur reposent actuellement sur le m
 
 ### 3. AYABA — assistante de la plateforme
 
-Un bouton flottant **AYABA** est présent sur toutes les pages de l’espace connecté, et une entrée de menu ouvre la page complète.
+Un bouton flottant **AYABA** est présent sur toutes les pages — y compris le site public, avant même la création d’un compte — et une entrée de menu ouvre la page complète dans l’espace connecté.
+
+Sans compte, AYABA présente la plateforme et son fonctionnement (inscription, NPI, sécurité, droits, annuaire, urgences). Une question portant sur un dossier personnel renvoie vers la connexion au lieu de recevoir une réponse à côté du sujet.
 
 - Elle répond aux questions sur le fonctionnement de la plateforme : compte, NPI, rendez-vous, dossier, consentements, droits, journal d’audit, trousse de secours, plus les sujets propres aux professionnels et à l’administration.
 - Les réponses proviennent d’une base de connaissances interne (`src/lib/ayaba-knowledge.ts`) : **aucun appel à un modèle externe**, aucune donnée de santé n’est envoyée à un tiers.
@@ -82,7 +84,7 @@ Un bouton flottant **AYABA** est présent sur toutes les pages de l’espace con
 
 ### 4. Mode sombre
 
-Le sélecteur de thème se trouve dans la barre supérieure : **Clair**, **Sombre** ou **Système**. Le choix est mémorisé dans le navigateur (et non sur le compte), appliqué avant le premier rendu pour éviter tout flash, et suit le réglage du système quand l’option « Système » est retenue. Toutes les couleurs de structure passent par les variables CSS définies en tête de `src/app/globals.css` ; le thème sombre les redéfinit sous `html[data-theme="dark"]`.
+Le sélecteur de thème est accessible partout : dans la barre supérieure de l’espace connecté, et en bas à droite du site public. Trois choix : **Clair**, **Sombre** ou **Système**. Le choix est mémorisé dans le navigateur (et non sur le compte), appliqué avant le premier rendu pour éviter tout flash, et suit le réglage du système quand l’option « Système » est retenue. Toutes les couleurs de structure passent par les variables CSS définies en tête de `src/app/globals.css` ; le thème sombre les redéfinit sous `html[data-theme="dark"]`.
 
 ### Médecins et établissements — création par l’administration
 

@@ -329,9 +329,43 @@ export function normalizeQuestion(value: string) {
     .trim();
 }
 
+/**
+ * Sujets accessibles sans compte : ceux qui décrivent la plateforme elle-même.
+ *
+ * Un visiteur qui hésite à s'inscrire doit pouvoir se renseigner avant de créer
+ * un compte. Les sujets liés au dossier personnel (rendez-vous, consentements,
+ * documents) exigent une session et ne sont pas exposés ici.
+ */
+const PUBLIC_TOPIC_IDS = new Set([
+  "presentation", "npi", "compte-creation", "mot-de-passe", "connexion-probleme",
+  "donnees-securite", "journal-audit", "trouver-centre", "urgences", "don-sang",
+  "droits", "assistant-sante",
+]);
+
+export function topicsForPublic() {
+  return COMMON.filter((topic) => PUBLIC_TOPIC_IDS.has(topic.id)).map(({ id, title }) => ({ id, title }));
+}
+
 /** Liste des sujets visibles pour un rôle, pour l'écran d'accueil d'AYABA. */
 export function topicsFor(role: AyabaRole) {
   return (BY_ROLE[role] || BY_ROLE.patient).map(({ id, title }) => ({ id, title }));
+}
+
+/**
+ * Repère une question qui porte sur un dossier personnel (« où en est mon
+ * rendez-vous ? »). Sans session, AYABA ne peut pas y répondre : mieux vaut
+ * inviter à se connecter que de servir une réponse générale à côté du sujet.
+ */
+export function looksPersonal(question: string) {
+  const normalized = normalizeQuestion(question);
+  return /\b(mon|ma|mes|m)\b/.test(normalized)
+    && /(dossier|rendez|rdv|ordonnance|resultat|analyse|document|consultation|prescription|traitement|antecédent|antecedent)/.test(normalized);
+}
+
+/** Recherche parmi les seuls sujets accessibles sans compte. */
+export function findPublicTopics(question: string, limit = 3) {
+  const topics = COMMON.filter((topic) => PUBLIC_TOPIC_IDS.has(topic.id));
+  return findTopicsIn(question, topics, limit);
 }
 
 /**
@@ -342,7 +376,11 @@ export function topicsFor(role: AyabaRole) {
  * désavantagent pas les sujets courts.
  */
 export function findTopics(question: string, role: AyabaRole, limit = 3) {
-  const topics = BY_ROLE[role] || BY_ROLE.patient;
+  return findTopicsIn(question, BY_ROLE[role] || BY_ROLE.patient, limit);
+}
+
+/** Moteur d'appariement commun, appliqué à un sous-ensemble de sujets. */
+function findTopicsIn(question: string, topics: AyabaTopic[], limit: number) {
   const normalized = normalizeQuestion(question);
   if (!normalized) return [];
 

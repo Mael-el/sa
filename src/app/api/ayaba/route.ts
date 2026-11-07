@@ -1,4 +1,4 @@
-import { findTopics, fallbackAnswer, topicsFor, type AyabaRole } from "@/lib/ayaba-knowledge";
+import { findTopics, findPublicTopics, fallbackAnswer, looksPersonal, topicsFor, topicsForPublic, type AyabaRole } from "@/lib/ayaba-knowledge";
 import { getSessionUser } from "@/lib/auth";
 import { withinRateLimit } from "@/lib/security";
 import { db } from "@/db";
@@ -19,14 +19,53 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(request: Request) {
   const user = await getSessionUser();
-  if (!user) return Response.json({ error: "Connexion requise." }, { status: 401 });
+  const body = await request.json().catch(() => ({}));
+  const question = String(body.question || "").trim().slice(0, 500);
+
+  // Sans session, AYABA reste disponible sur le fonctionnement de la plateforme :
+  // un visiteur doit pouvoir se renseigner avant de créer un compte. Les sujets
+  // qui touchent au dossier personnel ne sont ni listés ni répondus.
+  if (!user) {
+    if (!(await withinRateLimit(request, "ayaba-public", 60, 3600))) {
+      return Response.json({ error: "Beaucoup de questions en peu de temps. Réessayez dans un moment." }, { status: 429 });
+    }
+    if (!question) {
+      return Response.json({
+        greeting: "Bonjour, je suis AYABA, l'assistante de SANTÉ+. Je présente la plateforme et son fonctionnement. Pour une question sur votre dossier, connectez-vous ou créez votre compte.",
+        topics: topicsForPublic(),
+        visitor: true,
+      }, { headers: { "Cache-Control": "private, no-store" } });
+    }
+    if (looksPersonal(question)) {
+      return Response.json({
+        answer: "Cette question porte sur un dossier personnel : connectez-vous pour que je puisse y répondre, ou créez votre compte si vous n'en avez pas encore. Sans compte, je reste disponible sur le fonctionnement général de la plateforme.",
+        matched: null,
+        related: topicsForPublic().filter((topic) => ["compte-creation", "connexion-probleme", "donnees-securite"].includes(topic.id)),
+        suggestions: [],
+        found: false,
+        visitor: true,
+        needsLogin: true,
+      }, { headers: { "Cache-Control": "private, no-store" } });
+    }
+
+    const publicMatches = findPublicTopics(question, 3);
+    const publicBest = publicMatches[0];
+    return Response.json({
+      answer: publicBest
+        ? publicBest.answer
+        : "Je ne réponds sans compte qu'aux questions sur le fonctionnement de la plateforme. Créez votre compte pour que je puisse vous accompagner sur votre dossier, vos rendez-vous et vos droits.",
+      matched: publicBest ? { id: publicBest.id, title: publicBest.title } : null,
+      related: publicMatches.slice(1).map((topic) => ({ id: topic.id, title: topic.title })),
+      suggestions: topicsForPublic().slice(0, 6),
+      found: Boolean(publicBest),
+      visitor: true,
+    }, { headers: { "Cache-Control": "private, no-store" } });
+  }
 
   if (!(await withinRateLimit(request, "ayaba", 120, 3600, String(user.id)))) {
     return Response.json({ error: "Beaucoup de questions en peu de temps. Réessayez dans un moment." }, { status: 429 });
   }
 
-  const body = await request.json().catch(() => ({}));
-  const question = String(body.question || "").trim().slice(0, 500);
   const role = (["patient", "doctor", "hospital", "admin"].includes(user.role) ? user.role : "patient") as AyabaRole;
 
   // Écran d'accueil : la liste des sujets disponibles pour ce rôle.

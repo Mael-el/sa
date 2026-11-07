@@ -7,6 +7,7 @@ import "@fontsource-variable/figtree";
 import "@fontsource-variable/plus-jakarta-sans";
 import "./globals.css";
 import { themeBootstrapScript } from "@/components/theme-toggle";
+import { SiteShortcuts } from "@/components/public-shortcuts";
 
 export const metadata: Metadata = {
   title: "SANTÉ+ — Votre santé, connectée",
@@ -25,6 +26,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           {themeBootstrapScript}
         </Script>
         {children}
+        {/* AYABA et le choix du thème restent accessibles partout, y compris
+            avant la création d'un compte. */}
+        <SiteShortcuts />
       </body>
     </html>
   );
