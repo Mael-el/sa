@@ -85,6 +85,11 @@ export const medicalRecords = pgTable("medical_records", {
   title: varchar("title", { length: 200 }).notNull(),
   description: text("description").notNull(),
   details: text("details"),
+  // Trace de la dernière modification : quel professionnel, quand, et quels champs.
+  // Sans cela, une donnée médicale peut changer sans qu'on sache qui l'a fait.
+  updatedByUserId: integer("updated_by_user_id").references(() => users.id),
+  updatedAt: timestamp("updated_at"),
+  revision: integer("revision").notNull().default(1),
   recordedAt: timestamp("recorded_at").notNull().defaultNow(),
 }, (table) => [index("medical_record_patient_date_idx").on(table.patientId, table.recordedAt)]);
 
@@ -290,10 +295,22 @@ export const careConsents = pgTable("care_consents", {
   hospitalId: integer("hospital_id").notNull().references(() => hospitals.id),
   purpose: varchar("purpose", { length: 180 }).notNull().default("Prise en charge médicale"),
   source: varchar("source", { length: 40 }).notNull().default("patient"),
+  // Permissions accordées par le patient. Un droit refusé ne doit jamais être
+  // déduit d'un autre : « consulter » et « modifier » sont indépendants.
+  canView: boolean("can_view").notNull().default(true),
+  canModify: boolean("can_modify").notNull().default(false),
+  canViewDocuments: boolean("can_view_documents").notNull().default(true),
+  // Une demande du professionnel attend la décision du patient : elle ne donne
+  // aucun accès tant qu'elle n'est pas « accordée ».
+  status: varchar("status", { length: 20 }).notNull().default("accordé"),
+  requestMessage: text("request_message"),
+  requestedAt: timestamp("requested_at"),
+  decidedAt: timestamp("decided_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   expiresAt: timestamp("expires_at").notNull(),
   revokedAt: timestamp("revoked_at"),
 }, (table) => [
+  index("consent_status_idx").on(table.patientId, table.status),
   index("consent_patient_idx").on(table.patientId),
   index("consent_doctor_expiry_idx").on(table.doctorId, table.expiresAt),
   index("consent_hospital_expiry_idx").on(table.hospitalId, table.expiresAt),

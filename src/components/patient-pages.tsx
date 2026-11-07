@@ -81,7 +81,7 @@ const BLOOD_GROUPS = ["O+", "O-", "A+", "A-", "B+", "B-", "AB+", "AB-"];
 
 export function PatientPage({ page, ...props }: ScreenProps & { page: string }) {
   if (page === "profile") return <PatientProfile {...props} />;
-  if (page === "identity") return <IdentitySearch role={props.data.user.role} />;
+  if (page === "identity") return <IdentitySearch role={props.data.user.role} act={props.act} toast={props.toast} />;
   if (page === "appointments") return <PatientAppointments {...props} />;
   if (page === "records") return <PatientRecords {...props} />;
   if (page === "prescriptions") return <PatientPrescriptions {...props} />;

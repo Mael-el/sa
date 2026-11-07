@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { AlertCircle, ArrowRight, Building2, FileText, Search, ShieldCheck, ShieldX, Stethoscope, UserRound } from "lucide-react";
-import { PatientDetailModal, StatusBadge } from "@/components/shared";
+import { AlertCircle, ArrowRight, Building2, FileText, Search, Send, ShieldCheck, ShieldX, Stethoscope, UserRound } from "lucide-react";
+import { EditRecordModal, Modal, PatientDetailModal, StatusBadge, type ScreenProps } from "@/components/shared";
+import type { MedicalRecord } from "@/lib/types";
 import { sessionHeaders } from "@/lib/session-client";
 
 /**
@@ -44,8 +45,12 @@ const ACCESS_LABELS: Record<SearchResult["access"], string> = {
   refus: "Accès refusé",
 };
 
-export function IdentitySearch({ role }: { role: string }) {
+export function IdentitySearch({ role, act, toast }: { role: string; act: ScreenProps["act"]; toast: ScreenProps["toast"] }) {
   const [query, setQuery] = useState("");
+  const [requestFor, setRequestFor] = useState<SearchResult | null>(null);
+  const [motif, setMotif] = useState("");
+  const [sending, setSending] = useState(false);
+  const [editingRecord, setEditingRecord] = useState<MedicalRecord | null>(null);
   const [results, setResults] = useState<SearchResult[] | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -68,6 +73,18 @@ export function IdentitySearch({ role }: { role: string }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const askAccess = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!requestFor) return;
+    setSending(true);
+    try {
+      const result = await act("requestConsent", { patientId: requestFor.id, message: motif });
+      toast(result.message || "Demande transmise au patient.");
+      setRequestFor(null);
+      setMotif("");
+    } catch { /* act affiche déjà l'erreur */ } finally { setSending(false); }
   };
 
   return (
@@ -148,8 +165,13 @@ export function IdentitySearch({ role }: { role: string }) {
                       <ShieldX size={16} />Dossier non accessible
                     </button>
                   )}
+                  {item.access !== "dossier" && item.role === "patient" && ["doctor", "hospital"].includes(role) && (
+                    <button className="btn btn-soft" onClick={() => { setRequestFor(item); setMotif(""); }}>
+                      <Send size={15} />Demander l’accès au patient
+                    </button>
+                  )}
                   {item.access === "refus" && role !== "patient" && (
-                    <span className="identity-hint">Demandez au patient d’accorder un accès depuis son espace « Confidentialité & Droits ».</span>
+                    <span className="identity-hint">Le patient reçoit la demande dans son espace « Confidentialité & Droits » ; aucun accès n’est ouvert avant sa décision.</span>
                   )}
                 </div>
               </article>
@@ -158,7 +180,26 @@ export function IdentitySearch({ role }: { role: string }) {
         )
       )}
 
-      <PatientDetailModal patientId={openPatient} onClose={() => setOpenPatient(null)} role={role} />
+      <Modal open={Boolean(requestFor)} onClose={() => setRequestFor(null)} title="Demander l’accès au dossier" subtitle="Le patient reçoit votre demande et décide. Aucun accès ne s’ouvre avant sa réponse.">
+        <form className="form-stack" onSubmit={askAccess}>
+          <div className="consent-target">
+            <UserRound size={18} />
+            <div><strong>{requestFor?.fullName}</strong><span className="mono-text">{requestFor?.npi}</span></div>
+          </div>
+          <label className="field">
+            <span>Motif de la demande *</span>
+            <textarea value={motif} onChange={(event) => setMotif(event.target.value)} rows={4} minLength={10} maxLength={400} required placeholder="Ex. Suivi de cardiologie, bilan demandé lors de la consultation du 6 novembre." />
+          </label>
+          <p className="form-help">Le patient peut accepter la consultation seule, accepter aussi la modification, ou refuser. Il peut révoquer son accord à tout moment, et chaque décision est journalisée.</p>
+          <div className="modal-actions">
+            <button type="button" className="btn btn-outline" onClick={() => setRequestFor(null)}>Annuler</button>
+            <button className="btn btn-primary" disabled={sending || motif.trim().length < 10}>{sending ? "Envoi..." : "Envoyer la demande"}</button>
+          </div>
+        </form>
+      </Modal>
+
+      <PatientDetailModal patientId={openPatient} onClose={() => setOpenPatient(null)} role={role} onEdit={setEditingRecord} />
+      <EditRecordModal record={editingRecord} onClose={() => setEditingRecord(null)} act={act} toast={toast} />
     </div>
   );
 }

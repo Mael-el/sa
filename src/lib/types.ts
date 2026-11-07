@@ -20,7 +20,14 @@ export type PurchaseOrder = { id: number; hospitalId: number; supplier: string; 
 export type BloodStock = { id: number; hospitalId: number; bloodGroup: string; units: number; minUnits: number; updatedAt: string };
 export type MedicalDocument = { id: number; patientId: number; doctorId: number | null; title: string; category: string; fileName: string; mimeType: string; createdAt: string };
 export type PlatformSetting = { key: string; value: string; updatedAt: string };
-export type CareConsent = { id: number; patientId: number; doctorId: number | null; hospitalId: number; purpose: string; source: string; createdAt: string; expiresAt: string; revokedAt: string | null };
+export type CareConsent = { id: number; patientId: number; doctorId: number | null; hospitalId: number; purpose: string; source: string; canView: boolean; canModify: boolean; canViewDocuments: boolean; status: string; requestMessage: string | null; requestedAt: string | null; decidedAt: string | null; createdAt: string; expiresAt: string; revokedAt: string | null };
+
+/** Demande d'accès telle que présentée au patient, avec l'identité du demandeur. */
+export type ConsentRequest = CareConsent & {
+  requesterName: string;
+  requesterRole: string;
+  requesterSpecialty: string | null;
+};
 export type PrivacyRequest = { id: number; patientId: number; type: string; message: string; status: string; createdAt: string; reviewedAt: string | null };
 
 export type BootstrapData = {
@@ -46,5 +53,6 @@ export type BootstrapData = {
   documents: MedicalDocument[];
   settings: PlatformSetting[];
   consents: CareConsent[];
+  consentRequests: ConsentRequest[];
   privacyRequests: PrivacyRequest[];
 };

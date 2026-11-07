@@ -28,18 +28,8 @@ export async function withinRateLimit(request: Request, purpose: string, maxHits
   return entry.hits <= maxHits;
 }
 
-export async function hasCareConsent(current: typeof users.$inferSelect, patientId: number) {
-  if (current.role === "patient") return current.id === patientId;
-  if (current.role === "admin") return false;
-  const conditions = [eq(careConsents.patientId, patientId), isNull(careConsents.revokedAt), gt(careConsents.expiresAt, new Date())];
-  if (current.role === "doctor") {
-    const [doctor] = await db.select({ id: doctors.id }).from(doctors).where(and(eq(doctors.userId, current.id), eq(doctors.status, "actif"))).limit(1);
-    if (!doctor) return false;
-    conditions.push(eq(careConsents.doctorId, doctor.id));
-  } else if (current.role === "hospital" && current.hospitalId) conditions.push(eq(careConsents.hospitalId, current.hospitalId));
-  else return false;
-  const [grant] = await db.select({ id: careConsents.id }).from(careConsents).where(and(...conditions)).limit(1);
-  return Boolean(grant);
-}
+// La logique d'autorisation vit désormais dans consents.ts : un seul endroit
+// décide de ce qu'un rôle peut consulter ou modifier.
+export { consentPermissions, hasCareConsent, requireModify, requireView } from "./consents";
 
 export { passwordProblem } from "./passwords";

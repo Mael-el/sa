@@ -13,7 +13,7 @@ export async function GET() {
     const ownHospitalId = current.hospitalId || -1;
     const grantWhere = role === "patient" ? eq(careConsents.patientId, current.id) : role === "doctor" ? eq(careConsents.doctorId, ownDoctor?.id || -1) : role === "hospital" ? eq(careConsents.hospitalId, ownHospitalId) : undefined;
     const grants = grantWhere ? await db.select().from(careConsents).where(grantWhere).orderBy(desc(careConsents.createdAt)).limit(300) : [];
-    const grantedIds = [...new Set(grants.filter((item) => !item.revokedAt && item.expiresAt > new Date()).map((item) => item.patientId))];
+    const grantedIds = [...new Set(grants.filter((item) => item.status === "accordé" && !item.revokedAt && item.expiresAt > new Date()).map((item) => item.patientId))];
     const [allHospitals, allPharmacies, allHealthFacilities, allDoctorsJoined, allAppointments, allUsers, allRecords, allPrescriptions, allPayments, allNotifications, allDonations, allStocks, allServices, allRequests, allAudit, allOrders, allBloodStocks, allDocuments, allSettings, allPrivacyRequests] = await Promise.all([
       db.select().from(hospitals).limit(1000),
       db.select().from(pharmacies).limit(1000),
@@ -55,6 +55,24 @@ export async function GET() {
     ]);
     const doctorViews = allDoctorsJoined.filter(({ doctor }) => role !== "hospital" || doctor.hospitalId === ownHospitalId).map(({ doctor, doctorUser }) => ({ ...doctor, name: doctorUser.fullName, email: doctorUser.email, phone: doctorUser.phone, hospitalName: allHospitals.find((hospital) => hospital.id === doctor.hospitalId)?.shortName || "" }));
     const visibleUsers = allUsers.map((user) => role === "admin" ? { ...publicUser(user), bloodGroup: null, birthDate: null } : publicUser(user));
-    return Response.json({ serverTime: new Date().toISOString(), user: publicUser(current), hospitals: allHospitals, pharmacies: allPharmacies, healthFacilities: allHealthFacilities, doctors: doctorViews, users: visibleUsers, appointments: allAppointments, records: allRecords, prescriptions: allPrescriptions, payments: allPayments, notifications: allNotifications, donations: allDonations, stocks: allStocks, services: allServices, requests: allRequests, audit: allAudit, orders: allOrders, bloodStocks: allBloodStocks, documents: allDocuments, settings: allSettings, consents: role === "patient" ? grants : [], privacyRequests: allPrivacyRequests }, { headers: { "Cache-Control": "private, no-store" } });
+    // Demandes d'accès reçues, avec l'identité du demandeur : le patient doit
+    // savoir qui demande, et pour quel motif, avant de décider.
+    const consentRequests = role === "patient"
+      ? grants.map((grant) => {
+          const doctor = grant.doctorId ? doctorViews.find((item) => item.id === grant.doctorId) : null;
+          const hospital = allHospitals.find((item) => item.id === grant.hospitalId);
+          return {
+            id: grant.id, status: grant.status, purpose: grant.purpose, message: grant.requestMessage,
+            createdAt: grant.createdAt, requestedAt: grant.requestedAt, decidedAt: grant.decidedAt,
+            expiresAt: grant.expiresAt, revokedAt: grant.revokedAt,
+            canView: grant.canView, canModify: grant.canModify, canViewDocuments: grant.canViewDocuments,
+            doctorId: grant.doctorId, hospitalId: grant.hospitalId,
+            requesterName: doctor?.name || hospital?.shortName || hospital?.name || "Professionnel de santé",
+            requesterRole: doctor ? "Médecin" : "Établissement",
+            requesterSpecialty: doctor?.specialty || null,
+          };
+        })
+      : [];
+    return Response.json({ serverTime: new Date().toISOString(), user: publicUser(current), hospitals: allHospitals, pharmacies: allPharmacies, healthFacilities: allHealthFacilities, doctors: doctorViews, users: visibleUsers, consentRequests, appointments: allAppointments, records: allRecords, prescriptions: allPrescriptions, payments: allPayments, notifications: allNotifications, donations: allDonations, stocks: allStocks, services: allServices, requests: allRequests, audit: allAudit, orders: allOrders, bloodStocks: allBloodStocks, documents: allDocuments, settings: allSettings, consents: role === "patient" ? grants : [], privacyRequests: allPrivacyRequests }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) { console.error("Bootstrap error", error); return Response.json({ error: "Impossible de charger les données." }, { status: 500 }); }
 }

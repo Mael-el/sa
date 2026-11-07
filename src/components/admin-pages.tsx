@@ -11,7 +11,7 @@ import { copyToClipboard } from "@/lib/clipboard";
 export function AdminPage({ page, ...props }: ScreenProps & { page: string }) {
   if (page === "access") return <AdminAccess {...props} />;
   if (page === "users") return <AdminUsers {...props} />;
-  if (page === "identity") return <IdentitySearch role={props.data.user.role} />;
+  if (page === "identity") return <IdentitySearch role={props.data.user.role} act={props.act} toast={props.toast} />;
   if (page === "hospitals") return <AdminHospitals {...props} />;
   if (page === "patients") return <AdminPatients {...props} />;
   if (page === "payments") return <AdminPayments {...props} />;

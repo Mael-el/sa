@@ -4,7 +4,7 @@ import { and, eq, isNull, ne, or } from "drizzle-orm";
 import { db } from "@/db";
 import { accessRequests, appointments, auditLogs, bloodDonations, bloodStocks, careConsents, doctors, hospitalServices, hospitals, medicalDocuments, medicalRecords, notifications, passwordResets, payments, platformSettings, prescriptions, privacyRequests, purchaseOrders, sessions, stockItems, users, type Medication } from "@/db/schema";
 import { getSessionUser } from "@/lib/auth";
-import { hasCareConsent, sameOrigin, withinRateLimit } from "@/lib/security";
+import { hasCareConsent, requireModify, sameOrigin, withinRateLimit } from "@/lib/security";
 import { checkInteractions } from "@/lib/clinical";
 import { issueResetCode } from "@/lib/password-reset";
 
@@ -528,6 +528,87 @@ export async function POST(request: Request) {
       return Response.json({ message: "Compte créé. Transmettez le mot de passe temporaire par un canal sécurisé.", credentials: { email, password, role: targetRole }, user: { id: created.id } });
     }
 
+    if (action === "requestConsent") {
+      // Demande faite par un professionnel : elle ne donne AUCUN accès tant que
+      // le patient ne l'a pas accordée explicitement.
+      if (!["doctor", "hospital"].includes(role)) return fail("Action réservée aux professionnels de santé.", 403);
+      const patientId = asNumber(body.patientId);
+      const [patient] = await db.select().from(users).where(and(eq(users.id, patientId), eq(users.role, "patient"))).limit(1);
+      if (!patient) return fail("Patient introuvable.");
+      const message = asText(body.message);
+      if (message.length < 10 || message.length > 400) return fail("Précisez le motif de votre demande en 10 à 400 caractères.");
+
+      let doctorId: number | null = null;
+      let hospitalId = user.hospitalId;
+      if (role === "doctor") {
+        const [doctor] = await db.select().from(doctors).where(eq(doctors.userId, user.id)).limit(1);
+        if (!doctor || doctor.status !== "actif") return fail("Votre compte médecin n'est pas actif.", 403);
+        doctorId = doctor.id;
+        hospitalId = doctor.hospitalId;
+      }
+      if (!hospitalId) return fail("Aucun établissement de rattachement.", 400);
+
+      const [existing] = await db.select().from(careConsents).where(and(
+        eq(careConsents.patientId, patientId),
+        eq(careConsents.status, "en attente"),
+        isNull(careConsents.revokedAt),
+        doctorId ? eq(careConsents.doctorId, doctorId) : eq(careConsents.hospitalId, hospitalId),
+      )).limit(1);
+      if (existing) return fail("Une demande est déjà en attente de la décision de ce patient.", 409);
+
+      await db.insert(careConsents).values({
+        patientId, doctorId, hospitalId,
+        purpose: message.slice(0, 180),
+        requestMessage: message,
+        source: role === "doctor" ? "demande-médecin" : "demande-établissement",
+        status: "en attente",
+        requestedAt: new Date(),
+        // La demande expire d'elle-même : une autorisation ne doit pas rester
+        // ouverte indéfiniment sans décision.
+        expiresAt: new Date(Date.now() + 30 * 86400000),
+        canView: true, canModify: false, canViewDocuments: true,
+      });
+      const asker = role === "doctor" ? "Un médecin" : "Un établissement de santé";
+      await db.insert(notifications).values({
+        userId: patientId,
+        title: "Nouvelle demande d’accès à votre dossier",
+        message: `${asker} demande à consulter votre dossier médical. Motif : ${message.slice(0, 140)}. Vous seul décidez d’accepter ou de refuser.`,
+        category: "securite",
+      });
+      await writeAudit(user.id, "Demande d'accès déposée", `Patient ${patient.npi || patient.id}`, message.slice(0, 180));
+      return Response.json({ message: "Demande transmise au patient. Aucun accès n'est ouvert avant sa décision." });
+    }
+
+    if (action === "decideConsent") {
+      // Décision du patient sur une demande : accorder (avec ou sans
+      // modification) ou refuser. Seul le patient concerné peut décider.
+      if (role !== "patient") return fail("Accès réservé au patient.", 403);
+      const id = asNumber(body.id);
+      const [grant] = await db.select().from(careConsents).where(and(eq(careConsents.id, id), eq(careConsents.patientId, user.id))).limit(1);
+      if (!grant) return fail("Demande introuvable.", 404);
+      if (grant.revokedAt) return fail("Cette demande a déjà été clôturée.");
+      if (grant.status !== "en attente") return fail("Cette demande a déjà reçu une décision.", 409);
+
+      if (body.decision === "refuser") {
+        await db.update(careConsents).set({ status: "refusé", decidedAt: new Date() }).where(eq(careConsents.id, id));
+        await writeAudit(user.id, "Demande d'accès refusée", `Consentement #${id}`, grant.requestMessage?.slice(0, 120) || "");
+        return Response.json({ message: "Demande refusée. Le professionnel en est informé." });
+      }
+
+      const canModify = body.canModify === true;
+      const canViewDocuments = body.canViewDocuments !== false;
+      await db.update(careConsents).set({
+        status: "accordé",
+        decidedAt: new Date(),
+        canView: true,
+        canModify,
+        canViewDocuments,
+        expiresAt: new Date(Date.now() + 30 * 86400000),
+      }).where(eq(careConsents.id, id));
+      await writeAudit(user.id, "Demande d'accès accordée", `Consentement #${id}`, canModify ? "Consultation + modification" : "Consultation seule");
+      return Response.json({ message: canModify ? "Accès accordé pour 30 jours, modification incluse." : "Accès en consultation accordé pour 30 jours." });
+    }
+
     if (action === "grantConsent") {
       if (role !== "patient") return fail("Accès réservé au patient.", 403);
       const doctorId = asNumber(body.doctorId);
@@ -535,9 +616,62 @@ export async function POST(request: Request) {
       if (!doctor || doctor.status !== "actif") return fail("Médecin invalide.");
       const purpose = asText(body.purpose);
       if (purpose.length < 5 || purpose.length > 180) return fail("Indiquez le motif précis de ce partage.");
-      await db.insert(careConsents).values({ patientId: user.id, doctorId, hospitalId: doctor.hospitalId, purpose, source: "patient", expiresAt: new Date(Date.now() + 30 * 86400000) });
-      await writeAudit(user.id, "Consentement accordé", `Médecin #${doctorId}`, "Accès limité à 30 jours");
+      await db.insert(careConsents).values({
+        patientId: user.id, doctorId, hospitalId: doctor.hospitalId, purpose, source: "patient",
+        status: "accordé", decidedAt: new Date(),
+        canView: true, canModify: body.canModify === true, canViewDocuments: body.canViewDocuments !== false,
+        expiresAt: new Date(Date.now() + 30 * 86400000),
+      });
+      await writeAudit(user.id, "Consentement accordé", `Médecin #${doctorId}`, body.canModify === true ? "Consultation + modification, 30 jours" : "Consultation, 30 jours");
       return Response.json({ message: "Accès accordé pour 30 jours. Vous pouvez le révoquer à tout moment." });
+    }
+
+    if (action === "updateConsentPermissions") {
+      // Le patient ajuste une autorisation déjà accordée, sans la révoquer.
+      if (role !== "patient") return fail("Accès réservé au patient.", 403);
+      const id = asNumber(body.id);
+      const [grant] = await db.select().from(careConsents).where(and(eq(careConsents.id, id), eq(careConsents.patientId, user.id))).limit(1);
+      if (!grant || grant.status !== "accordé" || grant.revokedAt) return fail("Autorisation introuvable ou inactive.");
+      const canModify = body.canModify === true;
+      const canViewDocuments = body.canViewDocuments !== false;
+      await db.update(careConsents).set({ canModify, canViewDocuments }).where(eq(careConsents.id, id));
+      await writeAudit(user.id, "Permissions modifiées", `Consentement #${id}`, canModify ? "Modification autorisée" : "Modification retirée");
+      return Response.json({ message: "Permissions mises à jour." });
+    }
+
+    if (action === "updateRecord") {
+      // Modification d'une donnée médicale : consentement de modification exigé,
+      // et traçabilité complète du professionnel qui l'a effectuée.
+      if (!["doctor", "hospital"].includes(role)) return fail("Action réservée aux professionnels de santé.", 403);
+      const id = asNumber(body.id);
+      const [record] = await db.select().from(medicalRecords).where(eq(medicalRecords.id, id)).limit(1);
+      if (!record) return fail("Compte rendu introuvable.", 404);
+      const blocked = await requireModify(user, record.patientId);
+      if (blocked) return fail(`Modification refusée : ${blocked.reason}`, 403);
+      if (role === "hospital" && record.hospitalId !== user.hospitalId) return fail("Ce compte rendu appartient à un autre établissement.", 403);
+
+      const description = asText(body.description);
+      const notes = asText(body.details);
+      if (description.length < 3) return fail("Le contenu médical doit comporter au moins 3 caractères.");
+      if (description.length > 4000 || notes.length > 4000) return fail("Contenu trop long (4 000 caractères maximum).");
+
+      await db.update(medicalRecords).set({
+        description,
+        details: notes || record.details,
+        updatedByUserId: user.id,
+        updatedAt: new Date(),
+        revision: record.revision + 1,
+      }).where(eq(medicalRecords.id, id));
+
+      const [patient] = await db.select().from(users).where(eq(users.id, record.patientId)).limit(1);
+      await db.insert(notifications).values({
+        userId: record.patientId,
+        title: "Une donnée de votre dossier a été modifiée",
+        message: `Le compte rendu « ${record.title.slice(0, 80)} » a été mis à jour par un professionnel autorisé. La modification est tracée dans le journal d’audit.`,
+        category: "dossier",
+      });
+      await writeAudit(user.id, "Compte rendu modifié", `Patient ${patient?.npi || record.patientId}`, `Compte rendu #${id} · révision ${record.revision + 1} · ${user.fullName}`);
+      return Response.json({ message: "Modification enregistrée et tracée." });
     }
 
     if (action === "revokeConsent") {

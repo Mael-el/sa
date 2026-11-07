@@ -29,6 +29,13 @@
       "when": 1793916138705,
       "tag": "0003_remove_two_factor_authentication",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794020120782,
+      "tag": "0004_short_banshee",
+      "breakpoints": true
     }
   ]
 }

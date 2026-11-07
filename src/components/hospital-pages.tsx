@@ -7,7 +7,7 @@ import { IdentitySearch } from "@/components/identity-search";
 import type { HospitalService, StockItem } from "@/lib/types";
 
 export function HospitalPage({ page, ...props }: ScreenProps & { page: string }) {
-  if (page === "identity") return <IdentitySearch role={props.data.user.role} />;
+  if (page === "identity") return <IdentitySearch role={props.data.user.role} act={props.act} toast={props.toast} />;
   if (page === "doctors") return <HospitalDoctors {...props} />;
   if (page === "patients") return <HospitalPatients {...props} />;
   if (page === "services") return <HospitalServices {...props} />;
