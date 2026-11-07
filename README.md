@@ -70,6 +70,20 @@ Les connexions professionnelles et administrateur reposent actuellement sur le m
 - **Paramètres & Sécurité** : changement de mot de passe sécurisé, déconnexion des autres appareils, déconnexion globale, accessibilité (grande police, synthèse vocale), mode hors ligne.
 - **Déconnexion** : fermeture propre de session avec révocation du jeton en base.
 
+### 3. AYABA — assistante de la plateforme
+
+Un bouton flottant **AYABA** est présent sur toutes les pages de l’espace connecté, et une entrée de menu ouvre la page complète.
+
+- Elle répond aux questions sur le fonctionnement de la plateforme : compte, NPI, rendez-vous, dossier, consentements, droits, journal d’audit, trousse de secours, plus les sujets propres aux professionnels et à l’administration.
+- Les réponses proviennent d’une base de connaissances interne (`src/lib/ayaba-knowledge.ts`) : **aucun appel à un modèle externe**, aucune donnée de santé n’est envoyée à un tiers.
+- Elle ne pose pas de diagnostic et renvoie vers le 112 en cas d’urgence.
+- La question posée n’est pas journalisée : seul l’identifiant du sujet reconnu est enregistré dans le journal d’audit.
+- Limite : 120 questions par heure et par compte.
+
+### 4. Mode sombre
+
+Le sélecteur de thème se trouve dans la barre supérieure : **Clair**, **Sombre** ou **Système**. Le choix est mémorisé dans le navigateur (et non sur le compte), appliqué avant le premier rendu pour éviter tout flash, et suit le réglage du système quand l’option « Système » est retenue. Toutes les couleurs de structure passent par les variables CSS définies en tête de `src/app/globals.css` ; le thème sombre les redéfinit sous `html[data-theme="dark"]`.
+
 ### Médecins et établissements — création par l’administration
 
 Depuis l’espace administrateur :

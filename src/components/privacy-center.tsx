@@ -115,7 +115,10 @@ export function PrivacyCenter(props: ScreenProps) {
       </form>
     </Modal>
 
-    <AdminPrivacyRequests {...props} />
+    {/* Le panneau de traitement n'est rendu que pour l'administration : la route
+        API refuse déjà les autres rôles, mais un patient ne doit pas voir une
+        file de demandes qu'il ne peut pas traiter. */}
+    {data.user.role === "admin" && <AdminPrivacyRequests {...props} />}
   </div>;
 }
 
