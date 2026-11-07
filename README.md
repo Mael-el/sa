@@ -37,6 +37,7 @@ Voir `.env.example`.
 - `SESSION_SECRET` : secret de session, au moins 48 caractères.
 - `DATA_ENCRYPTION_KEY` : clé AES-256-GCM, 64 caractères hexadécimaux.
 - `ADMIN_EMAIL`, `ADMIN_NAME`, `ADMIN_INITIAL_PASSWORD`, `ADMIN_SUPPORT_EMAIL` : amorçage du compte administrateur.
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` : envoi des emails transactionnels (codes de réinitialisation, invitations de compte, alertes de sécurité). Facultatif : sans `SMTP_HOST`, l’administration remet les codes elle-même et rien ne casse.
 
 Les secrets et `.env.local` ne doivent jamais être ajoutés à Git. En production, utilisez un gestionnaire de secrets et une base PostgreSQL administrée avec sauvegardes, chiffrement au repos et supervision.
 

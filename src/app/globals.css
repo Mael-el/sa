@@ -3450,3 +3450,27 @@ h1, h2, h3, h4, h5, h6 {
   .consent-request-actions .btn { width: 100%; }
   .consent-row-foot { flex-direction: column; align-items: stretch; }
 }
+
+/* Consentement explicite avant tout appel à un service d'IA externe. */
+.assistant-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 11px 14px;
+  margin: 0 16px 12px;
+  background: #f8fafc;
+  border: 1px solid #eef2f8;
+  border-radius: 9px;
+  font-size: 11px;
+  line-height: 1.55;
+  color: #64748b;
+  cursor: pointer;
+}
+.assistant-consent input {
+  width: 15px;
+  height: 15px;
+  margin-top: 1px;
+  accent-color: #2563eb;
+  flex-shrink: 0;
+  cursor: pointer;
+}

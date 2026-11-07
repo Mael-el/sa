@@ -1784,6 +1784,9 @@ function PatientAssistant({ go, openEmergency }: ScreenProps) {
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  // Aucune donnée ne part vers un service externe sans accord explicite : le
+  // consentement est demandé une fois, ici, et reste sous contrôle du patient.
+  const [aiConsent, setAiConsent] = useState(false);
 
   const send = async (event: FormEvent) => {
     event.preventDefault();
@@ -1796,7 +1799,7 @@ function PatientAssistant({ go, openEmergency }: ScreenProps) {
       const response = await fetch("/api/assistant", {
         method: "POST",
         headers: sessionHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({ symptoms: text, aiConsent }),
       });
       const data = await response.json();
       setMessages((prev) => [
@@ -1836,6 +1839,10 @@ function PatientAssistant({ go, openEmergency }: ScreenProps) {
             ))}
             {loading && <div className="chat-bubble bot"><span className="typing-dots">Analyse en cours...</span></div>}
           </div>
+          <label className="assistant-consent">
+            <input type="checkbox" checked={aiConsent} onChange={(event) => setAiConsent(event.target.checked)} />
+            <span>J’accepte qu’un service d’intelligence artificielle externe analyse mon texte pour affiner l’orientation. Sans cet accord, l’analyse reste locale.</span>
+          </label>
           <form className="chat-input-row" onSubmit={send}>
             <input
               value={input}

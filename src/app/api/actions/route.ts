@@ -7,6 +7,7 @@ import { getSessionUser } from "@/lib/auth";
 import { hasCareConsent, requireModify, sameOrigin, withinRateLimit } from "@/lib/security";
 import { checkInteractions } from "@/lib/clinical";
 import { issueResetCode } from "@/lib/password-reset";
+import { sendAccountInvitation, sendSecurityAlert } from "@/lib/mailer";
 
 export const dynamic = "force-dynamic";
 
@@ -525,7 +526,24 @@ export async function POST(request: Request) {
         await tx.insert(auditLogs).values({ userId: user.id, action: "Création de compte", resource: createdUser.email, details: targetRole });
         return [createdUser];
       });
-      return Response.json({ message: "Compte créé. Transmettez le mot de passe temporaire par un canal sécurisé.", credentials: { email, password, role: targetRole }, user: { id: created.id } });
+      // Le mot de passe temporaire n'est plus seulement affiché à l'écran : si un
+      // transport est configuré, il part directement au titulaire, et
+      // l'administrateur n'a plus à le recopier par un canal improvisé.
+      const invitation = await sendAccountInvitation({
+        to: email,
+        fullName,
+        temporaryPassword: password,
+        supportEmail: process.env.ADMIN_SUPPORT_EMAIL,
+      });
+      await writeAudit(user.id, "Invitation de compte", email, invitation.sent ? "Transmise par email" : `Remise manuelle${invitation.reason ? ` (${invitation.reason})` : ""}`);
+      return Response.json({
+        message: invitation.sent
+          ? "Compte créé. Les identifiants ont été envoyés par email au titulaire."
+          : "Compte créé. Transmettez le mot de passe temporaire par un canal sécurisé.",
+        credentials: { email, password, role: targetRole },
+        emailSent: invitation.sent,
+        user: { id: created.id },
+      });
     }
 
     if (action === "requestConsent") {

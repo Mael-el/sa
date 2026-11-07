@@ -5,8 +5,9 @@ import { z } from "zod";
 import { db } from "@/db";
 import { accessRequests, auditLogs, notifications, platformSettings, sessions, users } from "@/db/schema";
 import { clearSession, createSignedToken, getSessionUser, publicUser, revokeAllSessions, revokeOtherSessions, setSession, verifySignedToken } from "@/lib/auth";
-import { consumeReset, findValidReset, issueResetCode } from "@/lib/password-reset";
+import { RESET_TTL_MINUTES, consumeReset, findValidReset, issueResetCode } from "@/lib/password-reset";
 import { passwordProblem, sameOrigin, withinRateLimit } from "@/lib/security";
+import { sendPasswordResetCode, sendSecurityAlert } from "@/lib/mailer";
 
 export const dynamic = "force-dynamic";
 const credentialsSchema = z.object({ identifier: z.string().trim().min(3), password: z.string().min(1) });
@@ -54,8 +55,12 @@ export async function POST(request: Request) {
       const [user] = await db.select().from(users).where(or(eq(users.email, identifier.toLowerCase()), eq(users.phone, identifier))).limit(1);
       // Réponse identique dans tous les cas : impossible d'énumérer les comptes existants.
       if (!user || !user.isActive) return Response.json(generic, { headers: responseHeaders });
-      await issueResetCode(user.id, "auto");
-      const admins = await db.select({ id: users.id }).from(users).where(eq(users.role, "admin"));
+      const reset = await issueResetCode(user.id, "auto");
+      // Si un transport est configuré, le patient reçoit son code directement et
+      // n'a plus à attendre qu'un administrateur le lui transmette. Sans
+      // transport, le comportement d'origine est conservé (remise humaine).
+      const mailed = await sendPasswordResetCode({ to: user.email, fullName: user.fullName, code: reset.code, minutes: RESET_TTL_MINUTES });
+      const admins = mailed.sent ? [] : await db.select({ id: users.id }).from(users).where(eq(users.role, "admin"));
       if (admins.length) {
         await db.insert(notifications).values(admins.map((admin) => ({
           userId: admin.id,
@@ -64,7 +69,12 @@ export async function POST(request: Request) {
           category: "securite",
         })));
       }
-      await db.insert(auditLogs).values({ userId: user.id, action: "Demande de réinitialisation", resource: "Mot de passe", details: "Code à usage unique émis pour 30 minutes" });
+      await db.insert(auditLogs).values({
+        userId: user.id,
+        action: "Demande de réinitialisation",
+        resource: "Mot de passe",
+        details: `${RESET_TTL_MINUTES} minutes · canal : ${mailed.sent ? "email" : `remise administrative${mailed.reason ? ` (${mailed.reason})` : ""}`}`,
+      });
       return Response.json(generic, { headers: responseHeaders });
     }
 
@@ -104,6 +114,13 @@ export async function POST(request: Request) {
       await db.update(users).set({ passwordHash: await hash(newPassword, 12), mustChangePassword: false, passwordChangedAt: new Date() }).where(eq(users.id, current.id));
       await revokeOtherSessions(current.id);
       await db.insert(auditLogs).values({ userId: current.id, action: "Changement de mot de passe", resource: "Compte utilisateur", details: "Autres sessions révoquées" });
+      // Alerte envoyée sans bloquer la réponse : c'est le signal qui permet de
+      // détecter une prise de contrôle de compte. Aucun mot de passe n'y figure.
+      await sendSecurityAlert({
+        to: current.email,
+        fullName: current.fullName,
+        message: "Le mot de passe de votre compte SANTÉ+ vient d'être modifié, et vos autres sessions ont été fermées.",
+      }).catch(() => {});
       return Response.json({ message: "Mot de passe mis à jour. Vos autres sessions ont été déconnectées." }, { headers: responseHeaders });
     }
 

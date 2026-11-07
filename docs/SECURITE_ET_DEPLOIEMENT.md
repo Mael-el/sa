@@ -35,6 +35,34 @@ En production : gestionnaire de secrets, TLS PostgreSQL, chiffrement au repos, s
 - Purge des données techniques : `npm run maintenance:purge` (ou `node scripts/maintenance-purge.mjs`), à planifier chaque nuit. `--dry-run` affiche les volumes sans rien supprimer. Chaque exécution est journalisée.
 - Superviser connexions, locks, croissance, sauvegardes et échecs d’authentification.
 
+## Envoi d’emails
+
+Transport SMTP optionnel, `src/lib/mailer.ts`. Sans `SMTP_HOST`, l’application
+fonctionne comme avant : l’administration remet les codes de vive voix. Aucun
+envoi n’est simulé, et aucun message n’est perdu silencieusement — le canal
+réellement utilisé est inscrit dans le journal d’audit.
+
+| Message | Déclencheur |
+|---|---|
+| Code de réinitialisation | Demande du patient sur `/mot-de-passe-oublie` |
+| Invitation de compte | Création d’un compte professionnel par l’administration |
+| Alerte de sécurité | Changement de mot de passe |
+
+Règles appliquées :
+
+- **aucun contenu de santé ne transite par email**, uniquement des codes et des
+  identifiants : un email se lit en clair chez les intermédiaires ;
+- si l’envoi échoue, la demande de réinitialisation retombe sur le circuit
+  administratif (notification aux administrateurs) au lieu d’échouer ;
+- un échec SMTP est journalisé côté serveur, sans être exposé à l’utilisateur ;
+- la réponse à une demande de réinitialisation reste identique dans tous les cas :
+  elle ne révèle jamais si un compte existe, ni si l’email est parti.
+
+Variables : `SMTP_HOST`, `SMTP_PORT` (587 par défaut), `SMTP_SECURE`, `SMTP_USER`,
+`SMTP_PASSWORD`, `SMTP_FROM`. Port 465 implique TLS direct, 587 utilise STARTTLS.
+Prévoir un enregistrement SPF, DKIM et DMARC sur le domaine d’envoi, faute de quoi
+les messages finiront en indésirables.
+
 ## Supervision
 
 - `GET /api/health` répond `200` avec `{ status, database, responseTimeMs }`, ou `503` si la base est injoignable. À brancher sur le contrôleur de disponibilité de l’hébergeur.
@@ -76,7 +104,7 @@ qu’elle ne touche jamais, et la procédure d’anonymisation.
 4. Audit de sécurité indépendant, tests d’intrusion et revue des dépendances.
 5. Sauvegardes, PRA/PCA, supervision et astreinte.
 6. Tests de charge, accessibilité et parcours utilisateurs réels.
-7. Envoi d’emails et de SMS : **aucun transport n’est implémenté**. La remise des codes de réinitialisation et la vérification des inscriptions passent aujourd’hui par l’administration. À intégrer avant l’ouverture au public.
+7. Emails : transport SMTP intégré (voir « Envoi d’emails »). Reste à fournir un compte SMTP réel et à configurer SPF/DKIM/DMARC. Les **SMS ne sont pas intégrés**.
 8. Authentification à deux facteurs : absente (voir plus haut), à arbitrer.
 9. Planification de la purge nocturne et surveillance de ses volumes.
 
